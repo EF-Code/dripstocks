@@ -5,11 +5,11 @@
   --font-sans: var(--font-sans), "Inter", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --color-paper: #ebe7d9;
-  --color-card: #fffdf8;
+  --color-paper: #dcd5be;
+  --color-card: #f4f0e3;
   --color-ink: #0e1420;
-  --color-muted: #57606e;
-  --color-hairline: #d6cfb8;
+  --color-muted: #565d6b;
+  --color-hairline: #c4b998;
   --color-baseblue: #0052ff;
   --color-basedark: #003bb5;
   --color-panel: #0b1526;
