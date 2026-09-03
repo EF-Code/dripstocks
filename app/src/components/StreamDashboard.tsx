@@ -72,7 +72,7 @@ export function StreamDashboard({ highlightId }: { highlightId?: bigint | null }
     }
   }, [nextId, isSuccess]);
 
-  if (!address) return <div className="text-sm text-muted">Connect to see streams. Demo uses Base Sepolia → Mainnet B20.</div>;
+  if (!address) return <div className="text-sm text-muted">Connect to see streams. Demo runs on Base Sepolia with mock tokens.</div>;
   if (vaultAddress === "0x0000000000000000000000000000000000000000") {
     return (
       <div className="rounded-xl border border-dashed border-hairline p-6 text-center">
