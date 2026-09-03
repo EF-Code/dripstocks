@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title DripVault - Stream Coinbase B20 Tokenized Stocks per second
 /// @notice Minimal linear streaming vault for B20 tokens (AAPLc/NVDAc/METAc/GOOGLc) on Base
@@ -54,7 +55,11 @@ contract DripVault is ReentrancyGuard, Ownable {
         return _createStream(recipient, token, amount, duration, bytes32(0));
     }
 
-    /// @notice Create a claimable stream for email/wallet-less recipient (recipient = 0, claimHash = keccak256(email or code))
+    /// @notice Create a claimable stream for a wallet-less recipient.
+    /// @dev claimHash must be keccak256 of a 256-bit random secret (e.g. keccak256(abi.encodePacked(secret))).
+    ///      REQUIRE a high-entropy random secret. Do NOT use raw low-entropy identifiers such as a plain
+    ///      email address: anyone who knows/guesses the preimage can permissionlessly claim (front-run steal).
+    ///      Share the secret off-chain only with the intended recipient.
     function createClaimableStream(address token, uint256 amount, uint256 duration, bytes32 claimHash) external nonReentrant returns (uint256 streamId) {
         if (claimHash == bytes32(0)) revert InvalidClaim();
         return _createStream(address(0), token, amount, duration, claimHash);
@@ -66,14 +71,18 @@ contract DripVault is ReentrancyGuard, Ownable {
         if (duration == 0) revert ZeroDuration();
         if (claimHash != bytes32(0) && claimHashToStreamId[claimHash] != 0) revert AlreadyClaimed();
 
+        // H1: measure actual received to support fee-on-transfer tokens.
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
+        if (received == 0) revert ZeroAmount();
 
         streamId = nextStreamId++;
         streams[streamId] = Stream({
             sender: msg.sender,
             recipient: recipient,
             token: token,
-            totalAmount: amount,
+            totalAmount: received,
             withdrawn: 0,
             start: block.timestamp,
             end: block.timestamp + duration,
@@ -85,17 +94,24 @@ contract DripVault is ReentrancyGuard, Ownable {
             claimHashToStreamId[claimHash] = streamId + 1; // +1 to avoid 0 ambiguity
         }
 
-        emit StreamCreated(streamId, msg.sender, recipient, token, amount, duration, claimHash);
+        emit StreamCreated(streamId, msg.sender, recipient, token, received, duration, claimHash);
     }
 
-    /// @notice Claim a claimable stream with preimage (e.g., email -> keccak)
-    function claim(uint256 streamId, bytes calldata preimage) external {
+    /// @notice Claim a claimable stream with the preimage of claimHash.
+    /// @dev Permissionless: anyone presenting the correct preimage becomes the recipient.
+    ///      REQUIRE claimHash = keccak256 of a 256-bit random secret. Do NOT use a raw email address
+    ///      or other guessable value — knowledge of the preimage is sufficient to steal the stream
+    ///      (front-running). Full recipient-binding would break the wallet-less flow and is out of scope.
+    function claim(uint256 streamId, bytes calldata preimage) external nonReentrant {
         Stream storage s = streams[streamId];
         if (s.claimHash == bytes32(0)) revert InvalidClaim();
         if (s.recipient != address(0)) revert AlreadyClaimed();
         if (keccak256(preimage) != s.claimHash) revert InvalidClaim();
         s.recipient = msg.sender;
-        emit Claimed(streamId, msg.sender, s.claimHash);
+        // H3: free the hash so it is reusable after lifecycle. Double-delete safe: guarded by != 0.
+        bytes32 h = s.claimHash;
+        if (h != bytes32(0)) delete claimHashToStreamId[h];
+        emit Claimed(streamId, msg.sender, h);
     }
 
     /// @notice View: total vested amount at current time
@@ -105,7 +121,7 @@ contract DripVault is ReentrancyGuard, Ownable {
         if (block.timestamp >= s.end) return s.totalAmount;
         uint256 elapsed = block.timestamp - s.start;
         uint256 duration = s.end - s.start;
-        return (s.totalAmount * elapsed) / duration;
+        return Math.mulDiv(s.totalAmount, elapsed, duration);
     }
 
     function withdrawable(uint256 streamId) public view returns (uint256) {
@@ -126,7 +142,9 @@ contract DripVault is ReentrancyGuard, Ownable {
         emit Withdrawn(streamId, s.recipient, amount);
     }
 
-    /// @notice Sender can cancel, refunds unvested to sender, vested stays withdrawable by recipient
+    /// @notice Sender can cancel, refunds unvested to sender, vested stays withdrawable by recipient.
+    /// @dev Claim-after-cancel is allowed: a claimable stream (recipient == 0) can still be claimed
+    ///      after cancel, and the vested portion stays withdrawable by the new recipient after claim.
     function cancel(uint256 streamId) external nonReentrant {
         Stream storage s = streams[streamId];
         if (msg.sender != s.sender) revert NotSender();
@@ -138,13 +156,16 @@ contract DripVault is ReentrancyGuard, Ownable {
         else if (block.timestamp >= s.end) vestedAmt = s.totalAmount;
         else {
             uint256 elapsed = block.timestamp - s.start;
-            vestedAmt = (s.totalAmount * elapsed) / duration;
+            vestedAmt = Math.mulDiv(s.totalAmount, elapsed, duration);
         }
         uint256 refund = s.totalAmount - vestedAmt;
         // Freeze totalAmount to vestedAmt so vested() stops growing
         s.totalAmount = vestedAmt;
         s.end = block.timestamp; // freeze
         s.canceled = true;
+        // H3: free the hash so it is reusable after lifecycle. Double-delete safe: guarded by != 0
+        // (claim then cancel deletes twice, second delete is a no-op).
+        if (s.claimHash != bytes32(0)) delete claimHashToStreamId[s.claimHash];
         if (refund > 0) {
             IERC20(s.token).safeTransfer(s.sender, refund);
         }
@@ -153,23 +174,31 @@ contract DripVault is ReentrancyGuard, Ownable {
 
     /// @notice Batch create for payroll (same token/amount/duration to multiple recipients)
     function batchCreate(address[] calldata recipients, address token, uint256 amountEach, uint256 duration) external nonReentrant returns (uint256[] memory ids) {
+        if (token == address(0)) revert ZeroAddress();
+        if (amountEach == 0) revert ZeroAmount();
+        if (duration == 0) revert ZeroDuration();
         ids = new uint256[](recipients.length);
         for (uint256 i = 0; i < recipients.length; i++) {
+            if (recipients[i] == address(0)) revert ZeroAddress();
+            // H1: measure actual received per stream to support fee-on-transfer tokens.
+            uint256 balanceBefore = IERC20(token).balanceOf(address(this));
             // transfer individually to avoid double transferFrom complexity - caller must approve total
             IERC20(token).safeTransferFrom(msg.sender, address(this), amountEach);
+            uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
+            if (received == 0) revert ZeroAmount();
             uint256 streamId = nextStreamId++;
             streams[streamId] = Stream({
                 sender: msg.sender,
                 recipient: recipients[i],
                 token: token,
-                totalAmount: amountEach,
+                totalAmount: received,
                 withdrawn: 0,
                 start: block.timestamp,
                 end: block.timestamp + duration,
                 canceled: false,
                 claimHash: bytes32(0)
             });
-            emit StreamCreated(streamId, msg.sender, recipients[i], token, amountEach, duration, bytes32(0));
+            emit StreamCreated(streamId, msg.sender, recipients[i], token, received, duration, bytes32(0));
             ids[i] = streamId;
         }
     }

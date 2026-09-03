@@ -92,7 +92,7 @@ contract YtHypothesesTest is Test {
         mock = new ERC20Mock();
     }
 
-    // H1: fee-on-transfer
+    // H1: fee-on-transfer (fixed: stores received, withdraw succeeds)
     function test_H1_FeeOnTransferInsolvent() public {
         feeToken.mint(sender, 100 ether);
         vm.prank(sender);
@@ -101,22 +101,23 @@ contract YtHypothesesTest is Test {
         uint256 id = vault.createStream(alice, address(feeToken), 100 ether, 100);
         // vault received only 90 due to 10% fee
         assertEq(feeToken.balanceOf(address(vault)), 90 ether, "vault underfunded");
-        // totalAmount stored as 100 but actual 90
-        (,, , uint256 total, ,,, ,) = vault.streams(id);
-        assertEq(total, 100 ether);
+        // FIXED: totalAmount stores actual received (90), not requested (100)
+        (,,, uint256 total,,,,,) = vault.streams(id);
+        assertEq(total, 90 ether, "stores received");
         vm.warp(block.timestamp + 100);
-        assertEq(vault.vested(id), 100 ether);
-        assertEq(vault.withdrawable(id), 100 ether);
-        // withdraw should attempt to transfer 100 but vault only has 90 -> revert
+        assertEq(vault.vested(id), 90 ether);
+        assertEq(vault.withdrawable(id), 90 ether);
+        // FIXED: withdraw succeeds for received amount
+        // Note: FeeToken also taxes the withdraw leg (90 -> 81 net to alice, 9 burned).
+        // The fix guarantees solvency (no revert); exit-fee slippage is inherent to FoT tokens.
         vm.prank(alice);
-        vm.expectRevert(); // SafeERC20FailedOperation or ERC20InsufficientBalance
         vault.withdraw(id);
-        // also cancel after partial vesting suffers same
-        // demonstrates locked funds
-        console2.log("H1 fee-on-transfer reproducibly locks withdraw");
+        assertEq(feeToken.balanceOf(address(vault)), 0, "vault emptied");
+        assertEq(feeToken.balanceOf(alice), 81 ether, "recipient got 90 minus 10% exit fee");
+        console2.log("H1 fee-on-transfer fixed: stores received, withdraw succeeds");
     }
 
-    // H2: batchCreate zero recipient
+    // H2: batchCreate zero recipient (fixed: reverts ZeroAddress, atomic)
     function test_H2_BatchZeroRecipientLocked() public {
         ERC20Mock m = ERC20Mock(address(mock));
         m.mint(sender, 20 ether);
@@ -125,39 +126,17 @@ contract YtHypothesesTest is Test {
         address[] memory recs = new address[](2);
         recs[0] = address(0); // zero
         recs[1] = alice;
+        // FIXED: batchCreate validates recipients and reverts atomically
         vm.prank(sender);
-        uint256[] memory ids = vault.batchCreate(recs, address(m), 10 ether, 100);
-        // first stream has recipient 0, claimHash 0 -> neither withdrawable nor claimable
-        (address s, address r, , uint256 amt, , , , bool canceled, bytes32 h) = vault.streams(ids[0]);
-        assertEq(r, address(0));
-        assertEq(h, bytes32(0));
-        vm.warp(block.timestamp + 100);
-        // alice can withdraw her stream
-        vm.prank(alice);
-        vault.withdraw(ids[1]);
-        assertEq(m.balanceOf(alice), 10 ether);
-        // zero recipient stream: withdraw reverts NotRecipient, claim reverts InvalidClaim, cancel only refunds unvested if sender cancels after end? but after end, refund 0, vested stays locked
-        vm.prank(alice);
-        vm.expectRevert(DripVault.NotRecipient.selector);
-        vault.withdraw(ids[0]);
-        vm.prank(bob);
-        vm.expectRevert(DripVault.InvalidClaim.selector);
-        vault.claim(ids[0], "anything");
-        // sender cancel after end: full vested but recipient is 0, so funds stuck
-        vm.warp(block.timestamp + 1000);
-        vm.prank(sender);
-        vault.cancel(ids[0]); // refund 0 because fully vested
-        assertEq(vault.vested(ids[0]), 10 ether);
-        // still cannot withdraw
-        vm.prank(sender);
-        vm.expectRevert(DripVault.NotRecipient.selector);
-        vault.withdraw(ids[0]);
-        // vault still holds 10 ether stuck forever
-        assertEq(m.balanceOf(address(vault)), 10 ether);
-        console2.log("H2 batch zero recipient locks 10 ether");
+        vm.expectRevert(DripVault.ZeroAddress.selector);
+        vault.batchCreate(recs, address(m), 10 ether, 100);
+        // atomic: no streams created, no funds moved
+        assertEq(vault.nextStreamId(), 0, "atomic revert");
+        assertEq(m.balanceOf(address(vault)), 0, "no funds moved");
+        console2.log("H2 batch zero recipient fixed: reverts ZeroAddress");
     }
 
-    // H2 duplicate: also test batchCreate with duplicate recipients and zero duration/amount not validated
+    // H2 duplicate: batchCreate validation (fixed: reverts on zero amount/duration/token/recipient)
     function test_H2_BatchNoValidation() public {
         ERC20Mock m = ERC20Mock(address(mock));
         m.mint(sender, 100 ether);
@@ -165,22 +144,27 @@ contract YtHypothesesTest is Test {
         m.approve(address(vault), 100 ether);
         address[] memory recs = new address[](1);
         recs[0] = alice;
-        // zero amount: batchCreate should revert if it validated, but it doesn't - it will create stream with 0 amount and still do transfer 0 (success)
+        // FIXED: zero amount reverts
         vm.prank(sender);
-        uint256[] memory ids = vault.batchCreate(recs, address(m), 0, 100);
-        (,,, uint256 amt,,,,,) = vault.streams(ids[0]);
-        assertEq(amt, 0);
-        // zero duration: creates stream with duration 0 - vested immediately 0? Let's see
+        vm.expectRevert(DripVault.ZeroAmount.selector);
+        vault.batchCreate(recs, address(m), 0, 100);
+        // FIXED: zero duration reverts
         vm.prank(sender);
-        recs[0]=bob;
-        ids = vault.batchCreate(recs, address(m), 1 ether, 0);
-        (,,,,, uint256 start, uint256 end,,) = vault.streams(ids[0]);
-        assertEq(start, end);
-        assertEq(vault.vested(ids[0]), 1 ether); // immediately vested
-        console2.log("H2 zero amount/duration not validated");
+        vm.expectRevert(DripVault.ZeroDuration.selector);
+        vault.batchCreate(recs, address(m), 1 ether, 0);
+        // FIXED: zero token reverts
+        vm.prank(sender);
+        vm.expectRevert(DripVault.ZeroAddress.selector);
+        vault.batchCreate(recs, address(0), 1 ether, 100);
+        // FIXED: zero recipient reverts
+        recs[0] = address(0);
+        vm.prank(sender);
+        vm.expectRevert(DripVault.ZeroAddress.selector);
+        vault.batchCreate(recs, address(m), 1 ether, 100);
+        console2.log("H2 zero amount/duration/token/recipient now validated");
     }
 
-    // H3: claimHash squatting
+    // H3: claimHash reuse (fixed: reusable after claim/cancel)
     function test_H3_ClaimHashSquatting() public {
         ERC20Mock m = ERC20Mock(address(mock));
         m.mint(sender, 10 ether);
@@ -192,35 +176,50 @@ contract YtHypothesesTest is Test {
         bytes32 hash = keccak256("alice@example.com");
         vm.prank(sender);
         uint256 id1 = vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        // bob front-runs same hash before sender's intended use? Actually sender already used it, now alice tries to get another stream for same email - blocked forever
+        // duplicate while live still blocked
         vm.prank(bob);
         vm.expectRevert(DripVault.AlreadyClaimed.selector);
         vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        // even after claim, still blocked
+        // FIXED: after claim, hash freed -> reuse succeeds
         vm.prank(alice);
         vault.claim(id1, "alice@example.com");
+        assertEq(vault.claimHashToStreamId(hash), 0, "hash freed on claim");
         vm.prank(bob);
-        vm.expectRevert(DripVault.AlreadyClaimed.selector);
-        vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        // even after cancel, still blocked
+        uint256 id2 = vault.createClaimableStream(address(m), 1 ether, 100, hash);
+        assertEq(vault.claimHashToStreamId(hash), id2 + 1, "reuse after claim works");
+        // FIXED: after cancel of reused stream, hash freed again -> reuse succeeds
+        vm.prank(bob);
+        vault.cancel(id2);
+        assertEq(vault.claimHashToStreamId(hash), 0, "hash freed on cancel");
         vm.prank(sender);
-        vault.cancel(id1);
-        vm.prank(bob);
-        vm.expectRevert(DripVault.AlreadyClaimed.selector);
-        vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        // permanent DOS
-        // also attacker can pre-squat
+        uint256 id3 = vault.createClaimableStream(address(m), 1 ether, 100, hash);
+        assertEq(vault.claimHashToStreamId(hash), id3 + 1, "reuse after cancel works");
+        // FIXED: cancel path with fresh hash also reusable
+        bytes32 hash2 = keccak256("bob@example.com");
+        vm.prank(sender);
+        uint256 id4 = vault.createClaimableStream(address(m), 1 ether, 100, hash2);
+        vm.prank(sender);
+        vault.cancel(id4);
+        vm.prank(sender);
+        uint256 id5 = vault.createClaimableStream(address(m), 1 ether, 100, hash2);
+        assertEq(vault.claimHashToStreamId(hash2), id5 + 1, "cancel-reuse works");
+        // squat is now temporary: attacker pre-squat blocks only until released
         bytes32 victimHash = keccak256("victim@example.com");
         vm.prank(bob);
         uint256 squatId = vault.createClaimableStream(address(m), 0.01 ether, 100, victimHash);
-        // now legitimate sender cannot create for victim
         vm.prank(sender);
         vm.expectRevert(DripVault.AlreadyClaimed.selector);
         vault.createClaimableStream(address(m), 5 ether, 100, victimHash);
-        console2.log("H3 squatting reproducibly permanent");
+        // after squatter cancels, victim can reuse
+        vm.prank(bob);
+        vault.cancel(squatId);
+        vm.prank(sender);
+        uint256 victimId = vault.createClaimableStream(address(m), 5 ether, 100, victimHash);
+        assertEq(vault.claimHashToStreamId(victimHash), victimId + 1, "squat released after cancel");
+        console2.log("H3 reuse after claim/cancel now works");
     }
 
-    // H4: claim without nonReentrant - reenter claim during withdraw via malicious token
+    // H4b: claim now has nonReentrant - reentrant claim during creation is blocked
     function test_H4_ClaimWithoutGuardReenter() public {
         // Setup: create a claimable stream first
         ERC20Mock m = ERC20Mock(address(mock));
@@ -236,17 +235,19 @@ contract YtHypothesesTest is Test {
         malToken.setAttack(claimId, "secret");
         vm.prank(sender);
         malToken.approve(address(vault), 10 ether);
-        // creating stream with malicious token will trigger reenter to claim
+        // creating stream with malicious token triggers reenter to claim,
+        // but claim is now nonReentrant so the inner call reverts (swallowed as success=false)
         vm.prank(sender);
         uint256 id2 = vault.createStream(alice, address(malToken), 1 ether, 100);
-        // check if claim succeeded during reentrancy - it should because claim has no guard
+        // FIXED: claim stayed unclaimed (recipient still 0), outer creation succeeded
         (, address recAfter,,,,,,,) = vault.streams(claimId);
-        assertEq(recAfter, address(malToken), "malicious token contract claimed via reentrancy? Actually msg.sender in claim is malToken address, not sender");
-        // Note: during _update, msg.sender is vault? Let's see: malToken._update called with from=sender to=vault, so vault.call's msg.sender is malToken contract? Actually malToken contracts calls vault.call, so msg.sender inside claim is malToken address. So malToken becomes recipient, stealing claimable stream without knowing secret? But we provided secret, so yes steal.
-        // This demonstrates that claim being unguarded allows reentrancy from malicious token's transferFrom hook to steal claimable streams
-        // Even if not, we show claim can be called while nonReentrant lock held, violating guard completeness
-        // Let's also show withdraw reentrancy attempt: create a withdrawable stream with malicious token that tries to claim during withdraw
-        console2.log("H4 claim unguarded reentrancy success", recAfter);
+        assertEq(recAfter, address(0), "reentrant claim blocked, still unclaimed");
+        // legitimate claim still works afterwards
+        vm.prank(alice);
+        vault.claim(claimId, "secret");
+        (, address recFinal,,,,,,,) = vault.streams(claimId);
+        assertEq(recFinal, alice, "legit claim works, no deadlock");
+        console2.log("H4b reentrant claim blocked, legit claim works", recFinal);
     }
 
     function test_H4_FrontRunClaimSteal() public {
@@ -274,7 +275,7 @@ contract YtHypothesesTest is Test {
         console2.log("H4 front-run claim steal reproducibly");
     }
 
-    // H5 overflow
+    // H5 overflow (fixed: Math.mulDiv avoids overflow, no DOS)
     function test_H5_VestedOverflowDOS() public {
         // Use malicious token that allows huge amount without balance
         // Instead use mock that we mint huge amount
@@ -292,16 +293,20 @@ contract YtHypothesesTest is Test {
         vm.prank(sender);
         uint256 id = vault.createStream(alice, address(m), bigAmt, 31536000);
         vm.warp(block.timestamp + 15768000); // half
-        // vested should be bigAmt/2 but multiplication overflows and reverts
-        vm.expectRevert(); // arithmetic overflow
-        vault.vested(id);
+        // FIXED: Math.mulDiv computes without overflow — vested is bigAmt/2
+        assertEq(vault.vested(id), bigAmt / 2, "mulDiv half vested");
+        assertEq(vault.withdrawable(id), bigAmt / 2, "withdrawable half");
         vm.prank(alice);
-        vm.expectRevert();
         vault.withdraw(id);
+        assertEq(m.balanceOf(alice), bigAmt / 2, "withdraw half succeeds");
+        // cancel after partial withdraw also succeeds (no overflow)
         vm.prank(sender);
-        vm.expectRevert();
         vault.cancel(id);
-        console2.log("H5 overflow DOS reproducibly locks");
+        // refund + withdrawn accounting: refund is remaining unvested half
+        assertEq(m.balanceOf(sender), bigAmt / 2, "refund remaining half");
+        assertEq(vault.vested(id), bigAmt / 2, "frozen vested");
+        assertEq(vault.withdrawable(id), 0, "nothing left after withdraw+freeze");
+        console2.log("H5 overflow fixed: mulDiv succeeds");
     }
 
     // H6 cancel unclaimed claimable locks vested
