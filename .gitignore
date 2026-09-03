@@ -1,0 +1,22 @@
+# deps
+node_modules/
+out/
+cache/
+broadcast/
+# env - ignore .env but keep .env.example
+.env
+.env.local
+!*.env.example
+app/.env
+app/.env.local
+!app/.env.example
+contracts/.env
+!contracts/.env.example
+# next
+app/.next/
+app/dist/
+# foundry
+contracts/cache/
+contracts/out/
+# os
+.DS_Store
