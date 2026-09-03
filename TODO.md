@@ -19,8 +19,9 @@
 - [x] Sourcify exact-match verification: vault https://sourcify.dev/#/lookup/84532-0x50e9DFD093F5E98AE1e1FC7AF4F87e5650000C49 (mocks verify identically by address)
 - [x] og.png (real product shot) + custom droplet favicon
 
-## Remaining (needs your Vercel account)
-- [ ] Vercel: set the 7 `NEXT_PUBLIC_*` vars from `app/.env.example` → deploy → smoke-test incognito
+## Remaining
+- [x] Vercel live: https://dripstocks.vercel.app/ (root dir `app`, 7 env vars set; vault + mocks render, zero page errors)
+- [ ] Vercel dashboard → Analytics tab → Enable Web Analytics (until then `/_vercel/insights/script.js` 404s; redeploy after enabling)
 - [ ] Your click-through on the live URL (second wallet): direct, claim link, batch, withdraw, cancel
 - [ ] Record Loom + X post tagging @buildonbase + submit form (needs Builder Code)
 
