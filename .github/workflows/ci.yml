@@ -1,13 +1,20 @@
 name: CI
 on: [push, pull_request]
+# Cancel superseded runs: pushes land minutes apart pre-deadline, and the
+# fork step is too slow to let them pile up.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   contracts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
+      # Pinned stable: nightly crashed on Base mainnet forks (op_revm
+      # L1BlockInfo operator-fee panic, exit 134). Local dev uses 1.8.1.
       - uses: foundry-rs/foundry-toolchain@v1
-        with: { version: nightly }
+        with: { version: stable }
       - run: forge test --gas-report
         working-directory: contracts
       - run: forge coverage --report summary
@@ -20,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, cache-dependency-path: app/package-lock.json }
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
       - run: npm ci
         working-directory: app
       - run: npm run build
