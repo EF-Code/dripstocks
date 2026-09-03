@@ -37,7 +37,8 @@ dripstocks/
 
 - `contracts/src/DripVault.sol` — the streaming vault (`createStream`, `createClaimableStream`, `claim`, `withdraw`, `cancel`, `batchCreate`; `vested`/`withdrawable` views).
 - Token references (Base mainnet B20 precompiles, see `app/src/lib/b20.ts`): `AAPLc`, `NVDAc`, `METAc`, `GOOGLc`, `MSFTc`, `TSLAc`, with Chainlink feeds recorded for display.
-- No deployment is configured yet. The frontend defaults to the zero address until `NEXT_PUBLIC_DRIP_VAULT_BASE` / `NEXT_PUBLIC_DRIP_VAULT_SEPOLIA` are set (see `app/.env.example`). Chainlink prices are shown for reference only; the vault settles in token units and uses no oracle.
+- Live on Base Sepolia: vault [`0x50e9DFD093F5E98AE1e1FC7AF4F87e5650000C49`](https://sepolia.basescan.org/address/0x50e9DFD093F5E98AE1e1FC7AF4F87e5650000C49) with 6 MockB20 tokens (addresses in `TODO.md`), all Sourcify-verified with exact matches. Set the 7 `NEXT_PUBLIC_*` vars (see `app/.env.example`) to point the frontend at them.
+- Chainlink prices are shown for reference only; the vault settles in token units and uses no oracle.
 
 ## Getting started
 
@@ -70,6 +71,7 @@ Then set the deployed address in `app/.env.local` and redeploy the frontend.
 
 - Foundry: 42 unit, edge-case, and proof tests (direct, claimable, batch, cancel, fuzz), plus 5 fork tests against Base mainnet (B20 metadata, Chainlink feeds) and a multi-actor invariant campaign (256 runs).
 - Local end-to-end on Anvil: deployed the Sepolia script and exercised create → vest → withdraw, claimable claim → withdraw, batch payroll, and cancel with refund — all succeed.
+- Live end-to-end on Base Sepolia with two wallets: direct 1.5 NVDAc stream fully vested and withdrawn in full, claimable 0.5 AAPLc claimed by secret-holder with a correct linear partial withdraw, batch payroll to two recipients, and cancel with exact unvested refund.
 - Frontend: 17 vitest tests covering token configuration, wallet setup, and stream components.
 - CI (`.github/workflows/ci.yml`) runs the contract suite with fork tests and coverage, plus the frontend build and vitest.
 
@@ -84,7 +86,7 @@ Two properties remain the operator's responsibility:
 
 ## Status and roadmap
 
-Working prototype: contracts implemented and tested, frontend covers direct streams, claim links, batch payroll, withdraw, claim, and cancel, audit fixes merged. Remaining before submission: deploy to Base Sepolia (see `TODO.md`), point the frontend at the deployment, record the demo, and submit the quest form.
+Working prototype: contracts implemented, tested, deployed, and verified on Base Sepolia; frontend covers direct streams, claim links, batch payroll, withdraw, claim, and cancel; audit fixes merged. Remaining before submission: deploy the frontend to Vercel (see `TODO.md`), record the demo, and submit the quest form.
 
 ## Links
 
