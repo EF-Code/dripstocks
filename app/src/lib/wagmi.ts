@@ -7,7 +7,10 @@ export const config = createConfig({
   chains: [baseSepolia, base],
   connectors: [
     injected(),
-    coinbaseWallet({ appName: "DripStocks", preference: "all" }),
+    // telemetry:false disables the wallet SDK's analytics loader, which
+    // otherwise POSTs to Coinbase endpoints and logs AnalyticsSDKApiError
+    // failures in consoles where those requests are blocked.
+    coinbaseWallet({ appName: "DripStocks", preference: { options: "all", telemetry: false } }),
   ],
   transports: {
     [base.id]: http(),
