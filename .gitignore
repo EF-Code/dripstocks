@@ -20,3 +20,5 @@ contracts/cache/
 contracts/out/
 # os
 .DS_Store
+# local-only audit records, never part of the core project
+.yt/
