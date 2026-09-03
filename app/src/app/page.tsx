@@ -6,6 +6,7 @@ import { CreateStream } from "@/components/CreateStream";
 import { StreamDashboard } from "@/components/StreamDashboard";
 import { TickerTape } from "@/components/TickerTape";
 import { getTokens, DRIP_VAULT_ABI, getVaultAddress } from "@/lib/b20";
+import { WALLET_CONNECT_READY } from "@/lib/wagmi";
 
 const SUPPORTED = [8453, 84532] as const;
 
@@ -21,8 +22,9 @@ function LogoMark() {
 
 function WalletButton() {
   const { address, isConnected } = useAccount();
-  const { connect, connectors, isPending } = useConnect();
+  const { connect, connectors, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
+  const [open, setOpen] = useState(false);
   if (isConnected) {
     return (
       <div className="flex items-center gap-2">
@@ -31,15 +33,42 @@ function WalletButton() {
       </div>
     );
   }
-  const connector = connectors[0];
   return (
-    <button
-      onClick={() => connector && connect({ connector })}
-      disabled={!connector || isPending}
-      className="shrink-0 whitespace-nowrap rounded-full bg-baseblue px-4 py-2 text-sm font-semibold text-white hover:bg-basedark disabled:opacity-50 sm:px-5"
-    >
-      {isPending ? "Connecting…" : "Connect wallet"}
-    </button>
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="whitespace-nowrap rounded-full bg-baseblue px-4 py-2 text-sm font-semibold text-white hover:bg-basedark sm:px-5"
+      >
+        Connect wallet
+      </button>
+      {open && (
+        <>
+          <button aria-hidden tabIndex={-1} onClick={() => setOpen(false)} className="fixed inset-0 cursor-default" />
+          <div role="menu" aria-label="Choose a wallet" className="absolute right-0 z-20 mt-2 w-64 rounded-2xl border border-hairline bg-card p-2 shadow-xl">
+            {connectors.map((c) => (
+              <button
+                key={c.uid}
+                role="menuitem"
+                disabled={isPending}
+                onClick={() => { setOpen(false); connect({ connector: c }); }}
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium hover:bg-paper disabled:opacity-50"
+              >
+                <span>{c.name === "Injected" ? "Browser wallet" : c.name}</span>
+                <span className="text-xs text-muted">{c.id === "walletConnect" ? "QR code" : c.id === "coinbaseWalletSDK" ? "Smart Wallet" : "Extension"}</span>
+              </button>
+            ))}
+            {!WALLET_CONNECT_READY && (
+              <div className="rounded-xl px-3 py-2.5 text-xs text-muted">
+                WalletConnect QR appears here once a project ID is configured.
+              </div>
+            )}
+            {error && <div role="alert" className="px-3 py-2 text-xs text-danger">Connection failed: {error.message.slice(0, 140)}</div>}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
