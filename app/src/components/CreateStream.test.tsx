@@ -25,15 +25,16 @@ describe("CreateStream", () => {
     render(<CreateStream />);
     const body = document.body.textContent || "";
     expect(body).toMatch(/Sepolia mock/);
-    expect(body).toMatch(/Connect wallet to create stream/);
+    expect(body).toMatch(/Connect a wallet to create a stream/);
   });
 
-  it("claim tab explains 256-bit secrets", () => {
+  it("claim tab explains secret handling", () => {
     render(<CreateStream />);
     fireEvent.click(screen.getByText("Claim link"));
     const body = document.body.textContent || "";
     expect(body).toMatch(/Generate/);
-    expect(body).toMatch(/256-bit random/);
+    expect(body).toMatch(/off-chain only/);
+    expect(body).toMatch(/raw email/);
   });
 
   it("batch tab accepts one address per line", () => {

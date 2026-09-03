@@ -1,25 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Space_Grotesk, Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const display = Space_Grotesk({ variable: "--font-display", subsets: ["latin"], weight: ["500", "600", "700"] });
+const body = Inter({ variable: "--font-sans", subsets: ["latin"], weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {
-  title: "DripStocks — Stocks as Streaming Money",
-  description: "Stream Coinbase Tokenized Stocks (AAPLc, NVDAc) per second on Base. Built for Base Builder Quest.",
+  title: "DripStocks — Payroll that streams by the second",
+  description: "Stream tokenized stocks per second on Base Sepolia. Direct streams, claim links, and batch payroll with live vesting.",
+  themeColor: "#0b1526",
   openGraph: {
-    title: "DripStocks — Stocks as Streaming Money",
-    description: "Your salary, now streaming in NVDAc per second. Built on Base with B20.",
+    title: "DripStocks — Payroll that streams by the second",
+    description: "Fund a stream, watch it vest live, withdraw anytime. Built on Base.",
     images: ["/og.png"],
   },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-[#fafaf9] text-zinc-900">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${display.variable} ${body.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col bg-paper text-ink">
         <Providers>{children}</Providers>
       </body>
     </html>

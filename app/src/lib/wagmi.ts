@@ -3,7 +3,8 @@ import { base, baseSepolia } from "wagmi/chains";
 import { coinbaseWallet, injected } from "wagmi/connectors";
 
 export const config = createConfig({
-  chains: [base, baseSepolia],
+  // Sepolia first: disconnected visitors land on the testnet view.
+  chains: [baseSepolia, base],
   connectors: [
     injected(),
     coinbaseWallet({ appName: "DripStocks", preference: "all" }),
