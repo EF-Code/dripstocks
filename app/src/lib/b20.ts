@@ -67,6 +67,10 @@ export const B20_ABI = [
 
 export const DRIP_VAULT_ABI = [
   { type: "function", name: "createStream", inputs: [{ name: "recipient", type: "address" }, { name: "token", type: "address" }, { name: "amount", type: "uint256" }, { name: "duration", type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "nonpayable" },
+  { type: "function", name: "createClaimableStream", inputs: [{ name: "token", type: "address" }, { name: "amount", type: "uint256" }, { name: "duration", type: "uint256" }, { name: "claimHash", type: "bytes32" }], outputs: [{ type: "uint256" }], stateMutability: "nonpayable" },
+  { type: "function", name: "claim", inputs: [{ name: "streamId", type: "uint256" }, { name: "preimage", type: "bytes" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "cancel", inputs: [{ name: "streamId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "batchCreate", inputs: [{ name: "recipients", type: "address[]" }, { name: "token", type: "address" }, { name: "amountEach", type: "uint256" }, { name: "duration", type: "uint256" }], outputs: [{ type: "uint256[]" }], stateMutability: "nonpayable" },
   { type: "function", name: "vested", inputs: [{ name: "streamId", type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "withdrawable", inputs: [{ name: "streamId", type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "withdraw", inputs: [{ name: "streamId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
@@ -74,5 +78,22 @@ export const DRIP_VAULT_ABI = [
   { type: "function", name: "nextStreamId", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
 ] as const;
 
-// Placeholder - will be set after deploy on Base Sepolia / Mainnet
-export const DRIP_VAULT_ADDRESS = (process.env.NEXT_PUBLIC_DRIP_VAULT as `0x${string}`) || "0x0000000000000000000000000000000000000000";
+// Per-chain vault addresses. Reads NEXT_PUBLIC_DRIP_VAULT_BASE (8453) and
+// NEXT_PUBLIC_DRIP_VAULT_SEPOLIA (84532), falling back to legacy
+// NEXT_PUBLIC_DRIP_VAULT for compat. Unset chains default to zero address.
+const ZERO_VAULT = "0x0000000000000000000000000000000000000000" as const;
+const legacyVault = (process.env.NEXT_PUBLIC_DRIP_VAULT as `0x${string}` | undefined) || ZERO_VAULT;
+
+export const DRIP_VAULT_ADDRESSES: Record<8453 | 84532, `0x${string}`> = {
+  8453: ((process.env.NEXT_PUBLIC_DRIP_VAULT_BASE as `0x${string}` | undefined) || legacyVault) as `0x${string}`,
+  84532: ((process.env.NEXT_PUBLIC_DRIP_VAULT_SEPOLIA as `0x${string}` | undefined) || legacyVault) as `0x${string}`,
+};
+
+export function getVaultAddress(chainId?: number): `0x${string}` {
+  if (chainId === 8453) return DRIP_VAULT_ADDRESSES[8453];
+  if (chainId === 84532) return DRIP_VAULT_ADDRESSES[84532];
+  return DRIP_VAULT_ADDRESS;
+}
+
+/** @deprecated Use getVaultAddress(chainId) / DRIP_VAULT_ADDRESSES. Kept to avoid breaking imports. */
+export const DRIP_VAULT_ADDRESS = legacyVault;
