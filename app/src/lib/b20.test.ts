@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { B20_TOKENS, ONCHAIN_REGISTRY, DRIP_VAULT_ADDRESS, DRIP_VAULT_ADDRESSES, DRIP_VAULT_ABI, getVaultAddress } from "./b20";
+import { B20_TOKENS, ONCHAIN_REGISTRY, DRIP_VAULT_ADDRESS, DRIP_VAULT_ADDRESSES, DRIP_VAULT_ABI, getVaultAddress, getTokens, isTokenConfigured, SEPOLIA_TOKENS } from "./b20";
 
 describe("B20 config", () => {
   it("has 6 tokens with correct checksum addresses", () => {
@@ -53,5 +53,24 @@ describe("B20 config", () => {
     const feeds = new Set(Object.values(B20_TOKENS).map(t => t.chainlinkFeed.toLowerCase()));
     expect(addrs.size).toBe(6);
     expect(feeds.size).toBe(6);
+  });
+
+  it("getTokens returns mocks on Sepolia and real B20 elsewhere", () => {
+    const sepolia = getTokens(84532);
+    expect(Object.keys(sepolia)).toEqual(["AAPLc","NVDAc","METAc","GOOGLc","MSFTc","TSLAc"]);
+    for (const t of Object.values(sepolia)) {
+      expect(t.mock).toBe(true);
+      expect(t.chainlinkFeed).toBe("");
+    }
+    // Unset in test env -> zero addresses -> not configured
+    expect(isTokenConfigured(sepolia.AAPLc)).toBe(false);
+    expect(SEPOLIA_TOKENS.NVDAc.mock).toBe(true);
+    const mainnet = getTokens(8453);
+    for (const t of Object.values(mainnet)) {
+      expect(t.mock).toBe(false);
+      expect(isTokenConfigured(t)).toBe(true);
+    }
+    expect(mainnet.AAPLc.address).toBe(B20_TOKENS.AAPLc.address);
+    expect(getTokens(undefined).AAPLc.mock).toBe(false);
   });
 });

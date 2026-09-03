@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { CreateStream } from "./CreateStream";
 
 // Mock wagmi
@@ -12,25 +12,40 @@ vi.mock("wagmi", () => ({
 }));
 
 describe("CreateStream", () => {
-  it("renders token select and shows vault not deployed warning", () => {
+  it("renders mode tabs and token select", () => {
     render(<CreateStream />);
-    // Component has Token select and Connect prompt when not connected
+    expect(screen.getByText("Direct")).toBeDefined();
+    expect(screen.getByText("Claim link")).toBeDefined();
     expect(screen.getByText(/Token/)).toBeDefined();
     const text = document.body.textContent || "";
-    expect(text.includes("AAPLc") || text.includes("Connect") || text.includes("Vault not deployed")).toBe(true);
+    expect(text.includes("AAPLc")).toBe(true);
   });
 
-  it("has B20 addresses visible", () => {
+  it("shows Sepolia mock label and connect prompt when disconnected", () => {
     render(<CreateStream />);
     const body = document.body.textContent || "";
-    // At least one B20 prefix should be hinted in the component or via select
-    expect(body.length).toBeGreaterThan(0);
+    expect(body).toMatch(/Sepolia mock/);
+    expect(body).toMatch(/Connect wallet to create stream/);
   });
 
-  it("states Base names are not resolved and claim secrets must be 256-bit", () => {
+  it("claim tab explains 256-bit secrets", () => {
+    render(<CreateStream />);
+    fireEvent.click(screen.getByText("Claim link"));
+    const body = document.body.textContent || "";
+    expect(body).toMatch(/Generate/);
+    expect(body).toMatch(/256-bit random/);
+  });
+
+  it("batch tab accepts one address per line", () => {
+    render(<CreateStream />);
+    fireEvent.click(screen.getByText(/Batch/));
+    const body = document.body.textContent || "";
+    expect(body).toMatch(/one 0x address per line/);
+  });
+
+  it("states Base names are not resolved", () => {
     render(<CreateStream />);
     const body = document.body.textContent || "";
     expect(body).toMatch(/not resolved yet/);
-    expect(body).toMatch(/256-bit random/);
   });
 });

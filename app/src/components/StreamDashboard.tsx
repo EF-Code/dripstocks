@@ -70,11 +70,12 @@ export function StreamDashboard({ highlightId }: { highlightId?: bigint | null }
   return (
     <div className="space-y-3">
       <div className="text-xs text-zinc-500">Showing only streams where you are sender or recipient.</div>
+      <ClaimPanel vaultAddress={vaultAddress} />
       {ids.length === 0 ? (
         <div className="text-sm text-zinc-500">No streams yet. Create one → it will tick live here.</div>
       ) : (
         ids.map((id) => (
-          <StreamRow key={id.toString()} id={id} highlight={highlightId === id} connected={address} vaultAddress={vaultAddress} onWithdraw={(sid) => writeContract({ address: vaultAddress, abi: DRIP_VAULT_ABI, functionName: "withdraw", args: [sid] })} />
+          <StreamRow key={id.toString()} id={id} highlight={highlightId === id} connected={address} vaultAddress={vaultAddress} onWithdraw={(sid) => writeContract({ address: vaultAddress, abi: DRIP_VAULT_ABI, functionName: "withdraw", args: [sid] })} onCancel={(sid) => writeContract({ address: vaultAddress, abi: DRIP_VAULT_ABI, functionName: "cancel", args: [sid] })} />
         ))
       )}
       {hash && <div className="text-xs break-all text-zinc-500">tx: {hash}</div>}
@@ -82,7 +83,40 @@ export function StreamDashboard({ highlightId }: { highlightId?: bigint | null }
   );
 }
 
-function StreamRow({ id, highlight, connected, vaultAddress, onWithdraw }: { id: bigint; highlight?: boolean; connected?: string; vaultAddress: `0x${string}`; onWithdraw: (id: bigint) => void }) {
+function ClaimPanel({ vaultAddress }: { vaultAddress: `0x${string}` }) {
+  const [streamId, setStreamId] = useState("");
+  const [secret, setSecret] = useState("");
+  const { writeContract, data: hash, isPending } = useWriteContract();
+  const handleClaim = () => {
+    if (!/^\d+$/.test(streamId)) {
+      alert("Enter a numeric stream ID.");
+      return;
+    }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(secret.trim())) {
+      alert("Enter the 32-byte claim secret (0x + 64 hex chars) shared with you off-chain.");
+      return;
+    }
+    writeContract({
+      address: vaultAddress,
+      abi: DRIP_VAULT_ABI,
+      functionName: "claim",
+      args: [BigInt(streamId), secret.trim() as `0x${string}`],
+    });
+  };
+  return (
+    <div className="rounded-xl border border-dashed p-4 space-y-2">
+      <div className="text-xs font-medium">Claim a stream with a secret</div>
+      <div className="flex gap-2">
+        <input value={streamId} onChange={(e) => setStreamId(e.target.value)} placeholder="Stream ID" className="w-24 rounded-lg border px-2 py-1 text-xs font-mono" />
+        <input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="0x secret…" className="flex-1 rounded-lg border px-2 py-1 text-xs font-mono" />
+        <button onClick={handleClaim} disabled={isPending} className="rounded-full bg-black text-white px-3 py-1 text-xs disabled:opacity-50">Claim</button>
+      </div>
+      {hash && <div className="text-xs break-all text-zinc-500">tx: {hash}</div>}
+    </div>
+  );
+}
+
+function StreamRow({ id, highlight, connected, vaultAddress, onWithdraw, onCancel }: { id: bigint; highlight?: boolean; connected?: string; vaultAddress: `0x${string}`; onWithdraw: (id: bigint) => void; onCancel: (id: bigint) => void }) {
   const { address: connectedNow } = useAccount();
   const me = connected ?? connectedNow;
   const { data } = useReadContract({
@@ -94,7 +128,7 @@ function StreamRow({ id, highlight, connected, vaultAddress, onWithdraw }: { id:
   });
 
   if (!data) return <div className="h-24 animate-pulse bg-zinc-50 rounded-xl" />;
-  const [sender, recipient, token, total, withdrawn, start, end] = data as unknown as [string, string, string, bigint, bigint, bigint, bigint, boolean, string];
+  const [sender, recipient, token, total, withdrawn, start, end, canceled] = data as unknown as [string, string, string, bigint, bigint, bigint, bigint, boolean, string];
 
   // Filter to streams involving the connected wallet (sender or recipient).
   // Claimable-but-unclaimed rows have recipient == zero address: only the
@@ -104,27 +138,38 @@ function StreamRow({ id, highlight, connected, vaultAddress, onWithdraw }: { id:
   }
 
   const isRecipient = !!me && recipient.toLowerCase() === me.toLowerCase();
+  const isSender = !!me && sender.toLowerCase() === me.toLowerCase();
 
   return (
     <div className={`rounded-xl border p-4 ${highlight ? "ring-2 ring-[#0052ff] border-[#0052ff]" : ""}`}>
       <div className="flex justify-between items-start">
         <div>
-          <div className="text-xs text-zinc-500">Stream #{id.toString()} • {token.slice(0, 6)}…{token.slice(-4)}</div>
+          <div className="text-xs text-zinc-500">Stream #{id.toString()} • {token.slice(0, 6)}…{token.slice(-4)}{canceled ? " • canceled" : ""}</div>
           <div className="text-xs">from {sender.slice(0, 6)}… → {recipient.slice(0, 6)}…</div>
         </div>
-        <button
-          onClick={() => onWithdraw(id)}
-          disabled={!isRecipient}
-          title={isRecipient ? "Withdraw vested" : "Only the recipient can withdraw (contract reverts otherwise)"}
-          className="rounded-full bg-black text-white px-3 py-1 text-xs disabled:opacity-40"
-        >
-          Withdraw
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onWithdraw(id)}
+            disabled={!isRecipient}
+            title={isRecipient ? "Withdraw vested" : "Only the recipient can withdraw (contract reverts otherwise)"}
+            className="rounded-full bg-black text-white px-3 py-1 text-xs disabled:opacity-40"
+          >
+            Withdraw
+          </button>
+          {isSender && !canceled && (
+            <button
+              onClick={() => onCancel(id)}
+              title="Cancel stream: refunds unvested to you, freezes vesting"
+              className="rounded-full border px-3 py-1 text-xs"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
       <div className="mt-3">
         <Ticking start={start} end={end} total={total} withdrawn={withdrawn} />
       </div>
-      <div className="mt-2 text-[10px] text-zinc-400">Use withdrawable as Aave collateral on Base (read health factor offchain).</div>
     </div>
   );
 }

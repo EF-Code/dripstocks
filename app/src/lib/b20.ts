@@ -47,6 +47,52 @@ export const B20_TOKENS = {
 
 export type B20Symbol = keyof typeof B20_TOKENS;
 
+export interface TokenInfo {
+  symbol: string;
+  name: string;
+  address: `0x${string}`;
+  chainlinkFeed: string;
+  logo: string;
+  /** True for Sepolia MockB20 stand-ins (open mint); false for real B20 precompiles. */
+  mock: boolean;
+}
+
+const ZERO_TOKEN = "0x0000000000000000000000000000000000000000" as const;
+
+function sepoliaMock(symbol: B20Symbol, name: string, logo: string, env: string | undefined): TokenInfo {
+  return {
+    symbol,
+    name,
+    address: ((env as `0x${string}` | undefined) || ZERO_TOKEN) as `0x${string}`,
+    chainlinkFeed: "",
+    logo,
+    mock: true,
+  };
+}
+
+/** MockB20 addresses on Base Sepolia, filled after running DeployTestnet.s.sol. */
+export const SEPOLIA_TOKENS: Record<B20Symbol, TokenInfo> = {
+  AAPLc: sepoliaMock("AAPLc", "Apple Mock Tokenized Stock", "🍎", process.env.NEXT_PUBLIC_SEPOLIA_AAPLC),
+  NVDAc: sepoliaMock("NVDAc", "Nvidia Mock Tokenized Stock", "💚", process.env.NEXT_PUBLIC_SEPOLIA_NVDAC),
+  METAc: sepoliaMock("METAc", "Meta Mock Tokenized Stock", "📘", process.env.NEXT_PUBLIC_SEPOLIA_METAC),
+  GOOGLc: sepoliaMock("GOOGLc", "Alphabet Mock Tokenized Stock", "🔍", process.env.NEXT_PUBLIC_SEPOLIA_GOOGLC),
+  MSFTc: sepoliaMock("MSFTc", "Microsoft Mock Tokenized Stock", "🪟", process.env.NEXT_PUBLIC_SEPOLIA_MSFTC),
+  TSLAc: sepoliaMock("TSLAc", "Tesla Mock Tokenized Stock", "🚗", process.env.NEXT_PUBLIC_SEPOLIA_TSLAC),
+};
+
+/** Chain-aware token list: mocks on Sepolia (84532), real B20 precompiles elsewhere. */
+export function getTokens(chainId?: number): Record<B20Symbol, TokenInfo> {
+  if (chainId === 84532) return SEPOLIA_TOKENS;
+  return (Object.keys(B20_TOKENS) as B20Symbol[]).reduce((acc, k) => {
+    acc[k] = { ...B20_TOKENS[k], mock: false };
+    return acc;
+  }, {} as Record<B20Symbol, TokenInfo>);
+}
+
+export function isTokenConfigured(t: Pick<TokenInfo, "address">): boolean {
+  return t.address !== ZERO_TOKEN;
+}
+
 export const B20_ADDRESSES = Object.values(B20_TOKENS).map((t) => t.address);
 
 export const ONCHAIN_REGISTRY = "0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD" as const;

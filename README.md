@@ -68,8 +68,9 @@ Then set the deployed address in `app/.env.local` and redeploy the frontend.
 
 ## Testing
 
-- Foundry: 44 unit, edge-case, and proof tests (direct, claimable, batch, cancel, fuzz), plus 5 fork tests against Base mainnet (B20 metadata, Chainlink feeds) and a multi-actor invariant campaign (256 runs).
-- Frontend: 14 vitest tests covering token configuration, wallet setup, and stream components.
+- Foundry: 42 unit, edge-case, and proof tests (direct, claimable, batch, cancel, fuzz), plus 5 fork tests against Base mainnet (B20 metadata, Chainlink feeds) and a multi-actor invariant campaign (256 runs).
+- Local end-to-end on Anvil: deployed the Sepolia script and exercised create → vest → withdraw, claimable claim → withdraw, batch payroll, and cancel with refund — all succeed.
+- Frontend: 17 vitest tests covering token configuration, wallet setup, and stream components.
 - CI (`.github/workflows/ci.yml`) runs the contract suite with fork tests and coverage, plus the frontend build and vitest.
 
 ## Security
@@ -83,7 +84,7 @@ Two properties remain the operator's responsibility:
 
 ## Status and roadmap
 
-Working prototype: contracts implemented and tested, frontend creates streams and shows live vesting, audit fixes merged. Remaining before submission: deploy to Base Sepolia, point the frontend at the deployment, record the demo, and submit the quest form.
+Working prototype: contracts implemented and tested, frontend covers direct streams, claim links, batch payroll, withdraw, claim, and cancel, audit fixes merged. Remaining before submission: deploy to Base Sepolia (see `TODO.md`), point the frontend at the deployment, record the demo, and submit the quest form.
 
 ## Links
 

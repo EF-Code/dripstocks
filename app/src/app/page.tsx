@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
-import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { useAccount, useChainId, useConnect, useDisconnect, useReadContract } from "wagmi";
 import { CreateStream } from "@/components/CreateStream";
 import { StreamDashboard } from "@/components/StreamDashboard";
-import { B20_TOKENS } from "@/lib/b20";
+import { getTokens, DRIP_VAULT_ABI, getVaultAddress } from "@/lib/b20";
 
 function WalletButton() {
   const { address, isConnected } = useAccount();
@@ -24,8 +24,28 @@ function WalletButton() {
   );
 }
 
+function VaultStats({ vaultAddress }: { vaultAddress: `0x${string}` }) {
+  const { data: nextId } = useReadContract({
+    address: vaultAddress,
+    abi: DRIP_VAULT_ABI,
+    functionName: "nextStreamId",
+    query: { enabled: vaultAddress !== "0x0000000000000000000000000000000000000000", refetchInterval: 5000 },
+  });
+  return (
+    <div className="pt-3 grid grid-cols-3 gap-2 text-center">
+      <div className="rounded-lg bg-zinc-50 p-2"><div className="text-xs text-zinc-500">STREAMS</div><div className="font-semibold">{nextId !== undefined ? Number(nextId) : "—"}</div></div>
+      <div className="rounded-lg bg-zinc-50 p-2"><div className="text-xs text-zinc-500">VAULT</div><div className="font-mono text-xs pt-1">{vaultAddress === "0x0000000000000000000000000000000000000000" ? "not set" : `${vaultAddress.slice(0, 6)}…${vaultAddress.slice(-4)}`}</div></div>
+      <div className="rounded-lg bg-zinc-50 p-2"><div className="text-xs text-zinc-500">SETTLES IN</div><div className="font-semibold">Token units</div></div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [activeId, setActiveId] = useState<bigint | null>(null);
+  const chainId = useChainId();
+  const vaultAddress = getVaultAddress(chainId);
+  const tokens = getTokens(chainId);
+  const onTestnet = chainId === 84532;
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -49,33 +69,27 @@ export default function Home() {
           <div className="flex-1">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              LIVE ON BASE • B20 TOKENIZED STOCKS
+              {onTestnet ? "TESTNET • BASE SEPOLIA • MOCK TOKENS" : "LIVE ON BASE • B20 TOKENIZED STOCKS"}
             </div>
             <h1 className="mt-4 text-4xl md:text-5xl font-semibold tracking-tight">
               Your salary, <br /> streaming in <span className="text-[#0052ff]">NVDA</span> per second.
             </h1>
             <p className="mt-4 text-zinc-300 max-w-xl">
-              TradFi pays twice a month in USD. DripStocks streams Coinbase Tokenized Stocks (AAPLc, NVDAc, METAc, GOOGLc) every second on Base — 24/7, composable, withdraw anytime.
+              DripStocks streams {onTestnet ? "mock " : ""}tokenized stocks (AAPLc, NVDAc, METAc, GOOGLc) every second — 24/7, withdraw anytime. Fund a stream, watch it vest live, claim with a secret link, or run payroll for a whole team.
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
-              {Object.values(B20_TOKENS).map((t) => (
+              {Object.values(tokens).map((t) => (
                 <span key={t.symbol} className="rounded-full bg-white text-black px-3 py-1 text-xs font-medium">
-                  {t.logo} {t.symbol} • {t.address.slice(0, 6)}…{t.address.slice(-4)}
+                  {t.logo} {t.symbol}{t.mock ? " (mock)" : ""} • {t.address === "0x0000000000000000000000000000000000000000" ? "not set" : `${t.address.slice(0, 6)}…${t.address.slice(-4)}`}
                 </span>
               ))}
             </div>
           </div>
           <div className="flex-1 md:max-w-sm bg-white text-black rounded-xl p-5">
-            <div className="text-xs font-semibold tracking-widest text-zinc-500">LIVE TICKER</div>
+            <div className="text-xs font-semibold tracking-widest text-zinc-500">VAULT STATUS</div>
             <div className="mt-3 space-y-2">
-              <div className="flex justify-between text-sm"><span>NVDAc → alice.base.eth</span><span className="font-mono text-emerald-600">+0.0000007/s</span></div>
-              <div className="h-2 bg-zinc-100 rounded-full overflow-hidden"><div className="h-full w-[42%] bg-black" /></div>
-              <div className="text-xs text-zinc-500">0.42 / 1.00 NVDAc streamed • Withdraw anytime • Use as Aave collateral</div>
-              <div className="pt-3 grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-lg bg-zinc-50 p-2"><div className="text-xs text-zinc-500">STREAMS</div><div className="font-semibold">12.4k</div></div>
-                <div className="rounded-lg bg-zinc-50 p-2"><div className="text-xs text-zinc-500">VOLUME</div><div className="font-semibold">$2.1M</div></div>
-                <div className="rounded-lg bg-zinc-50 p-2"><div className="text-xs text-zinc-500">CHAIN</div><div className="font-semibold">Base</div></div>
-              </div>
+              <div className="text-xs text-zinc-500">Direct streams, claim links, and batch payroll — all settling in token units, no oracle, no custody beyond the vault.</div>
+              <VaultStats vaultAddress={vaultAddress} />
             </div>
           </div>
         </div>
@@ -92,7 +106,7 @@ export default function Home() {
         </div>
         <div className="rounded-2xl bg-white border p-6">
           <h2 className="font-semibold">Your Streams</h2>
-          <p className="text-sm text-zinc-500">Live ticking balances • Withdraw as collateral</p>
+          <p className="text-sm text-zinc-500">Live ticking balances • Withdraw, claim, or cancel</p>
           <div className="mt-4">
             <StreamDashboard highlightId={activeId} />
           </div>
