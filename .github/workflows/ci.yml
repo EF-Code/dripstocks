@@ -17,11 +17,14 @@ jobs:
       # v1.8.1 passes the fork suite (5/5, verified locally).
       - uses: foundry-rs/foundry-toolchain@v1
         with: { version: v1.8.1 }
-      # Fork tests excluded here: the public mainnet RPC rate-limits forge's
-      # state burst and stalls these steps. Fork suite runs once, below.
-      - run: forge test --gas-report --no-match-contract DripVaultFork
+      # Fork + invariant suites excluded here: gas-report instruments every
+      # internal call, which turns the 256-run invariant campaign into a
+      # 30-60 min step on shared runners. They run plain, below.
+      - run: forge test --gas-report --no-match-contract "DripVaultFork|DripVaultInvariant"
         working-directory: contracts
-      - run: forge coverage --report summary --no-match-contract DripVaultFork
+      - run: forge test --match-contract DripVaultInvariant
+        working-directory: contracts
+      - run: forge coverage --report summary --no-match-contract "DripVaultFork|DripVaultInvariant"
         working-directory: contracts
       - run: forge test --match-contract DripVaultFork --fork-url https://mainnet.base.org -vv
         working-directory: contracts
