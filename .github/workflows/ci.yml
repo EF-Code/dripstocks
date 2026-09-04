@@ -17,9 +17,11 @@ jobs:
       # v1.8.1 passes the fork suite (5/5, verified locally).
       - uses: foundry-rs/foundry-toolchain@v1
         with: { version: v1.8.1 }
-      - run: forge test --gas-report
+      # Fork tests excluded here: the public mainnet RPC rate-limits forge's
+      # state burst and stalls these steps. Fork suite runs once, below.
+      - run: forge test --gas-report --no-match-contract DripVaultFork
         working-directory: contracts
-      - run: forge coverage --report summary
+      - run: forge coverage --report summary --no-match-contract DripVaultFork
         working-directory: contracts
       - run: forge test --match-contract DripVaultFork --fork-url https://mainnet.base.org -vv
         working-directory: contracts
