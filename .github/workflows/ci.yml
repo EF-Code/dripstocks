@@ -11,10 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      # Pinned stable: nightly crashed on Base mainnet forks (op_revm
-      # L1BlockInfo operator-fee panic, exit 134). Local dev uses 1.8.1.
+      # Pinned to the exact validated binary: both nightly AND current
+      # stable crash forking recent Base mainnet (op_revm L1BlockInfo
+      # "Missing operator fee scalar for isthmus L1 Block", exit 134).
+      # v1.8.1 passes the fork suite (5/5, verified locally).
       - uses: foundry-rs/foundry-toolchain@v1
-        with: { version: stable }
+        with: { version: v1.8.1 }
       - run: forge test --gas-report
         working-directory: contracts
       - run: forge coverage --report summary
