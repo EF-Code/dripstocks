@@ -37,7 +37,8 @@ jobs:
           fi
           forge test --match-contract DripVaultFork --fork-url "${{ secrets.FORK_RPC_URL }}" -vv
         working-directory: contracts
-        env: { BASE_RPC: ${{ secrets.FORK_RPC_URL }} }
+        env:
+          BASE_RPC: ${{ secrets.FORK_RPC_URL }}
   app:
     runs-on: ubuntu-latest
     steps:
