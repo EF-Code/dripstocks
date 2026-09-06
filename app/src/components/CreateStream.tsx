@@ -29,7 +29,8 @@ export function CreateStream() {
   const [recipients, setRecipients] = useState("");
   const [secret, setSecret] = useState<`0x${string}` | "">("");
   const [amount, setAmount] = useState("0.1");
-  const [days, setDays] = useState("30");
+  const [durationValue, setDurationValue] = useState("30");
+  const [durationUnit, setDurationUnit] = useState<"minutes" | "hours" | "days" | "weeks">("days");
   const [formError, setFormError] = useState<string | null>(null);
 
   const token = TOKENS[symbol];
@@ -41,10 +42,11 @@ export function CreateStream() {
   const recipientList = recipients.split("\n").map((s) => s.trim()).filter(Boolean);
   const batchValid = recipientList.length > 0 && recipientList.length <= 50 && recipientList.every((r) => isAddress(r));
 
+  const unitSecs = durationUnit === "minutes" ? 60 : durationUnit === "hours" ? 3600 : durationUnit === "days" ? 86400 : 604800;
   const parsedAmount = Number(amount);
   const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
-  const parsedDays = Number(days);
-  const durationSecs = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.floor(parsedDays * 86400) : 0;
+  const parsedValue = Number(durationValue);
+  const durationSecs = Number.isFinite(parsedValue) && parsedValue > 0 ? Math.floor(parsedValue * unitSecs) : 0;
   const durationValid = durationSecs >= 60;
 
   const totalAmount = mode === "batch"
@@ -75,7 +77,7 @@ export function CreateStream() {
   const handleCreate = () => {
     setFormError(null);
     if (!amountValid) return fail("Enter an amount greater than zero.");
-    if (!durationValid) return fail("Enter a duration of at least 1 minute (0.0007 days).");
+    if (!durationValid) return fail("Enter a duration of at least 1 minute.");
     const duration = BigInt(durationSecs);
     if (mode === "direct") {
       if (!isAddress(recipient)) return fail("Enter a valid 0x recipient address. Base names and ENS are not resolved yet.");
@@ -174,11 +176,22 @@ export function CreateStream() {
         </label>
       )}
 
-      <label className={`${labelCls} block`}>
-        <span className="font-medium">Duration (days)</span>
-        <input value={days} onChange={(e) => { setDays(e.target.value); setFormError(null); }} placeholder="30" inputMode="decimal" className={inputCls} />
-        <span className={hintCls}>Unlocks linearly per second, minimum 1 minute. Withdraw anytime.</span>
-      </label>
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <label className={labelCls}>
+          <span className="font-medium">Duration</span>
+          <input value={durationValue} onChange={(e) => { setDurationValue(e.target.value); setFormError(null); }} placeholder="30" inputMode="decimal" className={inputCls} />
+        </label>
+        <label className={labelCls}>
+          <span className="font-medium">Unit</span>
+          <select value={durationUnit} onChange={(e) => setDurationUnit(e.target.value as typeof durationUnit)} className={`${inputCls} min-w-[7.5rem]`}>
+            <option value="minutes">Minutes</option>
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+          </select>
+        </label>
+      </div>
+      <div className="-mt-2 text-xs text-muted">Unlocks linearly per second, minimum 1 minute. Withdraw anytime.</div>
 
       {formError && (
         <div role="alert" className="rounded-xl border border-danger/30 bg-red-50 p-3 text-sm text-danger">{formError}</div>
