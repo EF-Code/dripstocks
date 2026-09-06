@@ -18,7 +18,7 @@ export const config = createConfig({
   // Sepolia first: disconnected visitors land on the testnet view.
   chains: [baseSepolia, base],
   connectors: [
-    injected(),
+    injected({ shimDisconnect: true }),
     coinbaseWallet({ appName: "DripStocks", preference: { options: "all", telemetry: false } }),
     // QR-code path for any mobile/external wallet. Requires the project ID;
     // without it the connector is omitted and the UI says so honestly.
@@ -30,7 +30,7 @@ export const config = createConfig({
     [base.id]: http(),
     [baseSepolia.id]: http(),
   },
-  ssr: true,
+  ssr: false,
 });
 
 declare module "wagmi" {

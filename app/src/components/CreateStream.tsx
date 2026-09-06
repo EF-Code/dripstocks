@@ -18,6 +18,12 @@ const inputCls = "mt-1 w-full rounded-xl border border-hairline bg-white px-3 py
 const labelCls = "text-sm";
 const hintCls = "text-xs text-muted";
 
+function decodeError(e: unknown): string {
+  const err = e as { shortMessage?: string; message?: string; cause?: { shortMessage?: string } };
+  // wagmi/viem nests the revert reason in cause.shortMessage or shortMessage
+  return err?.cause?.shortMessage || err?.shortMessage || err?.message || "Unknown error";
+}
+
 export function CreateStream() {
   const { address } = useAccount();
   const chainId = useChainId();
@@ -53,12 +59,20 @@ export function CreateStream() {
     ? (amountValid ? parseUnits(amount, 18) * BigInt(Math.max(recipientList.length, 1)) : BigInt(0))
     : (amountValid ? parseUnits(amount, 18) : BigInt(0));
 
-  const { data: allowance } = useReadContract({
+  const { data: allowance, isLoading: allowanceLoading } = useReadContract({
     address: token.address,
     abi: B20_ABI,
     functionName: "allowance",
     args: address ? [address, vaultAddress] : undefined,
     query: { enabled: !!address && tokenReady && vaultReady },
+  });
+
+  const { data: balance } = useReadContract({
+    address: token.address,
+    abi: B20_ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && tokenReady },
   });
 
   const fail = (msg: string) => setFormError(msg);
@@ -78,6 +92,9 @@ export function CreateStream() {
     setFormError(null);
     if (!amountValid) return fail("Enter an amount greater than zero.");
     if (!durationValid) return fail("Enter a duration of at least 1 minute.");
+    if (balance !== undefined && totalAmount > (balance as bigint)) {
+      return fail(`Insufficient ${symbol} balance. You have ${formatUnits(balance as bigint, 18)} ${symbol}.`);
+    }
     const duration = BigInt(durationSecs);
     if (mode === "direct") {
       if (!isAddress(recipient)) return fail("Enter a valid 0x recipient address. Base names and ENS are not resolved yet.");
@@ -109,8 +126,8 @@ export function CreateStream() {
     }
   };
 
-  const needsApprove = allowance !== undefined && totalAmount > (allowance as bigint);
-  const ready = !!address && tokenReady && vaultReady && amountValid && durationValid &&
+  const needsApprove = !allowanceLoading && allowance !== undefined && totalAmount > (allowance as bigint);
+  const ready = !!address && tokenReady && vaultReady && amountValid && durationValid && !allowanceLoading &&
     (mode === "direct" ? isAddress(recipient) : mode === "claimable" ? secret.length === 66 : batchValid);
 
   return (
@@ -207,6 +224,8 @@ export function CreateStream() {
         <div className="rounded-xl border border-hairline bg-paper p-3 text-sm">
           {symbol} is not configured on this chain yet — the deployer still needs to register its address.
         </div>
+      ) : allowanceLoading ? (
+        <button disabled className="w-full rounded-xl bg-zinc-200 py-3 text-sm font-semibold text-zinc-500">Checking approval…</button>
       ) : needsApprove ? (
         <button onClick={handleApprove} disabled={isPending} className="w-full rounded-xl bg-ink py-3 text-sm font-semibold text-white disabled:opacity-50">
           {isPending ? "Approving…" : `Approve ${formatUnits(totalAmount, 18)} ${symbol}`}
@@ -218,7 +237,7 @@ export function CreateStream() {
       )}
 
       {hash && <div className="break-all font-mono text-xs text-muted tnum">tx: {hash} {isSuccess && "✓ confirmed"}</div>}
-      {error && <div role="alert" className="text-xs text-danger">{error.message.slice(0, 300)}</div>}
+      {error && <div role="alert" className="rounded-lg bg-red-50 border border-red-200 p-2 text-xs text-danger break-all">Revert: {decodeError(error)}</div>}
 
       <p className="border-t border-hairline pt-3 text-xs leading-relaxed text-muted">
         Settles in raw token units — 1 token ≠ 1 share across corporate actions. {token.chainlinkFeed ? "Prices are reference only; the vault uses no oracle." : "No price feed on testnet."}
