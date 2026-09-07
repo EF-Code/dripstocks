@@ -1,4 +1,4 @@
-import { isAddress, zeroAddress, parseAbi } from "viem";
+import { getAddress, isAddress, zeroAddress, parseAbi } from "viem";
 // B20 Tokenized Stocks on Base - from docs.base.org/base-chain/asset-issuance/tokenized-stocks-on-base
 // Addresses are precompiles (no bytecode on Basescan), verified via Base docs
 export const B20_TOKENS = {
@@ -150,7 +150,22 @@ export const DRIP_VAULT_ADDRESSES: Record<8453 | 84532, `0x${string}`> = {
 
 export function getVaultAddress(chainId?: number): `0x${string}` {
   const address = chainId === 8453 || chainId === 84532 ? DRIP_VAULT_ADDRESSES[chainId] : ZERO_VAULT;
-  return isAddress(address) ? address : ZERO_VAULT;
+  return normalizeVaultAddress(address);
+}
+
+/**
+ * Normalize a configured vault address to EIP-55 checksum form.
+ * Lowercases before checksumming so a single checksum-casing typo in env
+ * (valid address, wrong EIP-55 case) cannot silently brick the UI by
+ * tripping isAddress and resolving to the zero address.
+ */
+export function normalizeVaultAddress(address: string): `0x${string}` {
+  try {
+    if (typeof address !== "string" || !isAddress(address.toLowerCase())) return ZERO_VAULT;
+    return getAddress(address.toLowerCase() as `0x${string}`);
+  } catch {
+    return ZERO_VAULT;
+  }
 }
 
 /** @deprecated Use getVaultAddress(chainId) / DRIP_VAULT_ADDRESSES. Kept to avoid breaking imports. */

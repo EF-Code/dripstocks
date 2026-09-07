@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { AbiFunction } from "viem";
-import { B20_TOKENS, ONCHAIN_REGISTRY, DRIP_VAULT_ADDRESS, DRIP_VAULT_ADDRESSES, DRIP_VAULT_ABI, getVaultAddress, getTokens, isTokenConfigured, SEPOLIA_TOKENS } from "./b20";
+import { B20_TOKENS, ONCHAIN_REGISTRY, DRIP_VAULT_ADDRESS, DRIP_VAULT_ADDRESSES, DRIP_VAULT_ABI, getVaultAddress, getTokens, isTokenConfigured, normalizeVaultAddress, SEPOLIA_TOKENS } from "./b20";
 
 describe("B20 config", () => {
   it("has 6 tokens with correct checksum addresses", () => {
@@ -29,9 +29,32 @@ describe("B20 config", () => {
   it("per-chain map defaults to zero and getVaultAddress resolves chains", () => {
     expect(DRIP_VAULT_ADDRESSES[8453]).toBe("0x0000000000000000000000000000000000000000");
     expect(DRIP_VAULT_ADDRESSES[84532]).toBe("0x0000000000000000000000000000000000000000");
-    expect(getVaultAddress(8453)).toBe(DRIP_VAULT_ADDRESSES[8453]);
-    expect(getVaultAddress(84532)).toBe(DRIP_VAULT_ADDRESSES[84532]);
+    expect(getVaultAddress(8453)).toBe("0x0000000000000000000000000000000000000000");
+    expect(getVaultAddress(84532)).toBe("0x0000000000000000000000000000000000000000");
     expect(getVaultAddress(undefined)).toBe(DRIP_VAULT_ADDRESS);
+  });
+
+  it("normalizeVaultAddress repairs checksum casing instead of bricking to zero", () => {
+    // Prod v2 vault was once deployed with a single mis-cased checksum char (fe vs Fe);
+    // the UI must resolve it to the checksummed address, not the zero address.
+    expect(normalizeVaultAddress("0x115fe60FD510c04fC765D06241623eAda42529B2")).toBe(
+      "0x115Fe60FD510c04fC765D06241623eAda42529B2",
+    );
+    expect(normalizeVaultAddress("0x115fe60fd510c04fc765d06241623eada42529b2")).toBe(
+      "0x115Fe60FD510c04fC765D06241623eAda42529B2",
+    );
+    expect(normalizeVaultAddress("0x0000000000000000000000000000000000000000")).toBe(
+      "0x0000000000000000000000000000000000000000",
+    );
+    expect(normalizeVaultAddress("0x...")).toBe("0x0000000000000000000000000000000000000000");
+    expect(normalizeVaultAddress("not-an-address")).toBe("0x0000000000000000000000000000000000000000");
+  });
+
+  it("getVaultAddress output is always normalized (never mis-checksummed)", () => {
+    for (const c of [8453, 84532, undefined] as const) {
+      const v = getVaultAddress(c);
+      expect(normalizeVaultAddress(v)).toBe(v);
+    }
   });
 
   it("DRIP_VAULT_ABI matches DripVault.sol signatures", () => {

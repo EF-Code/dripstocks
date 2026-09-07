@@ -19,7 +19,7 @@
 
 - **Script:** `contracts/script/Deploy.s.sol:Deploy` (vault-only, chain-guarded `UnsupportedChain` for 84532/31337)
 - **Tx:** `0x70b57c8817617db21a2c0acc098dc8f49ff84e134417d58388969780e8018523` · **Block:** `46490789` · **Status:** `0x1` · **Gas:** `1,532,768` @ `6 gwei`
-- **Vault v2:** `0x115fe60FD510c04fC765D06241623eAda42529B2` · **Sourcify:** `match` (creation + runtime) — https://sourcify.dev/#/lookup/84532-0x115fe60FD510c04fC765D06241623eAda42529B2
+- **Vault v2:** `0x115Fe60FD510c04fC765D06241623eAda42529B2` · **Sourcify:** `match` (creation + runtime) — https://sourcify.dev/#/lookup/84532-0x115Fe60FD510c04fC765D06241623eAda42529B2
 - **Artifacts:** `contracts/broadcast/Deploy.s.sol/84532/run-latest.json` (13→1 tx for v2) — kept locally with restrictive perms, not committed.
 
 ## 4. Fresh readbacks (Sepolia, 2026-09-07)
@@ -46,7 +46,7 @@ All 18-decimal, nonempty bytecode; deployer holds 1000 each from `DeployTestnet`
 
 - **Project:** existing DripStocks Vercel project (Git-linked to `EF-Code/dripstocks`, root `app`, `main` branch). No new project created.
 - **Local env:** `app/.env.local` updated to `NEXT_PUBLIC_DRIP_VAULT_SEPOLIA=0x115f…29B2` (new vault) + 6 mocks unchanged; `npm run build` passes with `/` and `/legacy` routes.
-- **Production env (pending):** Vercel dashboard still serves legacy vault `0x50e9…0C49` until `NEXT_PUBLIC_DRIP_VAULT_SEPOLIA` is set to `0x115f…29B2` and `NEXT_PUBLIC_DRIP_VAULT` fallback removed (per `docs/UPGRADE.md` §9). `WalletConnect`, `base:app_id`, `Analytics` preserved. No deployment SHA/domain can be verified until that cutover and a fresh build. **Blocker:** Vercel CLI not authenticated locally — manual dashboard update required (see §10).
+- **Production env (cut over 2026-09-07, verified):** `NEXT_PUBLIC_DRIP_VAULT_SEPOLIA=0x115f…29B2` present on Production/Preview/Development, 6 `NEXT_PUBLIC_SEPOLIA_*` mocks on Production/Preview only, `NEXT_PUBLIC_WC_PROJECT_ID` on all three, no legacy `NEXT_PUBLIC_DRIP_VAULT` fallback (per `docs/UPGRADE.md` §9). Production deployment `dripstocks-cgfetfxhk-ef-code-projects.vercel.app` (commit `e05517e`) is Ready and aliased to `dripstocks.vercel.app`; served client chunk contains the new vault + all 6 mocks + `commitClaim` and no legacy vault. `WalletConnect`, `base:app_id`, `Analytics` preserved. Note: static prerender HTML still shows the "not deployed on this chain" placeholder because the deployed env value is not EIP-55-checksummed and the deployed code gates on isAddress (see b20.ts normalizeVaultAddress fix, uncommitted). Prerender text must not be cited as the live vault address — verify via the served JS chunk or `cast`. Resolves once the code fix ships AND/OR the dashboard env value is corrected to 0x115Fe60F… + redeploy.
 
 ## 7. Acceptance matrix (Base Sepolia, small mock amounts, chain 84532)
 

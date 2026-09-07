@@ -23,3 +23,5 @@ contracts/out/
 .DS_Store
 # local-only audit records, never part of the core project
 .yt/
+.vercel
+.env*
