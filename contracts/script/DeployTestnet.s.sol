@@ -11,7 +11,9 @@ import {MockB20} from "../src/mocks/MockB20.sol";
 ///        --private-key $PRIVATE_KEY --broadcast
 ///      Copy the logged addresses into app/.env.local (see app/.env.example).
 contract DeployTestnet is Script {
+    error UnsupportedChain(uint256 chainId);
     function run() external {
+        if (block.chainid != 84532 && block.chainid != 31337) revert UnsupportedChain(block.chainid);
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         vm.startBroadcast(pk);

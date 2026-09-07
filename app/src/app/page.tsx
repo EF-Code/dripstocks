@@ -21,10 +21,13 @@ function LogoMark() {
 }
 
 function WalletButton() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, isReconnecting, isConnecting } = useAccount();
   const { connect, connectors, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
   const [open, setOpen] = useState(false);
+  if (isReconnecting || isConnecting || isPending) {
+    return <button disabled className="rounded-full bg-ink px-4 py-2 text-sm text-white">{isReconnecting ? "Reconnecting…" : "Connecting…"}</button>;
+  }
   if (isConnected) {
     return (
       <div className="flex items-center gap-2">
@@ -64,19 +67,18 @@ function WalletButton() {
                 WalletConnect QR appears here once a project ID is configured.
               </div>
             )}
-            {error && <div role="alert" className="px-3 py-2 text-xs text-danger">Connection failed: {error.message.slice(0, 140)}</div>}
           </div>
         </>
       )}
+      {error && <div role="alert" className="mt-2 max-w-64 text-xs text-danger">Connection failed. Check your wallet, then choose a connector to retry.</div>}
     </div>
   );
 }
 
 function ChainBanner() {
-  const { isConnected } = useAccount();
-  const chainId = useChainId();
-  const { switchChain, isPending } = useSwitchChain();
-  if (!isConnected || (SUPPORTED as readonly number[]).includes(chainId)) return null;
+  const { isConnected, chainId } = useAccount();
+  const { switchChain, isPending, error } = useSwitchChain();
+  if (!isConnected || (chainId !== undefined && (SUPPORTED as readonly number[]).includes(chainId))) return null;
   return (
     <div className="border-b border-amber-200 bg-amber-50">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-6 py-2.5 text-sm">
@@ -89,6 +91,7 @@ function ChainBanner() {
         >
           {isPending ? "Switching…" : "Switch to Base Sepolia"}
         </button>
+        {error && <span role="alert">Network switch failed. Switch to Base Sepolia in your wallet.</span>}
       </div>
     </div>
   );

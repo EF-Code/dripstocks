@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @notice Minimal linear streaming vault for B20 tokens (AAPLc/NVDAc/METAc/GOOGLc) on Base
 /// @dev Designed as fallback / wrapper if Sablier V2 not available for B20 multiplier tokens.
 ///      Stores streams as linear unlocks: amount * elapsed / duration. Recipient can withdraw vested.
-///      Supports claim-links (hashed email) for recipients without wallet yet.
+///      Supports random-secret claim links for recipients without a wallet yet.
 ///      B20 dividends are handled via multiplier at token level - vault just holds underlying B20, no rebasing logic needed.
 contract DripVault is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -25,12 +25,14 @@ contract DripVault is ReentrancyGuard, Ownable {
         uint256 start;
         uint256 end; // start + duration
         bool canceled;
-        bytes32 claimHash; // keccak256(email) or claim code, 0 if direct
+        bytes32 claimHash; // keccak256(random secret), 0 if direct
     }
 
     uint256 public nextStreamId;
     mapping(uint256 => Stream) public streams;
     mapping(bytes32 => uint256) public claimHashToStreamId; // for lookup
+    struct ClaimCommitment { bytes32 commitment; uint256 blockNumber; }
+    mapping(uint256 => mapping(address => ClaimCommitment)) public claimCommitments;
 
     event StreamCreated(uint256 indexed streamId, address indexed sender, address indexed recipient, address token, uint256 amount, uint256 duration, bytes32 claimHash);
     event Withdrawn(uint256 indexed streamId, address indexed recipient, uint256 amount);
@@ -46,6 +48,8 @@ contract DripVault is ReentrancyGuard, Ownable {
     error NothingToWithdraw();
     error AlreadyClaimed();
     error InvalidClaim();
+    error InvalidCommitment();
+    error CommitmentNotMature();
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
@@ -97,20 +101,34 @@ contract DripVault is ReentrancyGuard, Ownable {
         emit StreamCreated(streamId, msg.sender, recipient, token, received, duration, claimHash);
     }
 
-    /// @notice Claim a claimable stream with the preimage of claimHash.
-    /// @dev Permissionless: anyone presenting the correct preimage becomes the recipient.
-    ///      REQUIRE claimHash = keccak256 of a 256-bit random secret. Do NOT use a raw email address
-    ///      or other guessable value — knowledge of the preimage is sufficient to steal the stream
-    ///      (front-running). Full recipient-binding would break the wallet-less flow and is out of scope.
+    function claimProtocolVersion() external pure returns (uint256) { return 2; }
+
+    function claimCommitmentHash(uint256 streamId, address recipient, bytes calldata preimage) public view returns (bytes32) {
+        return keccak256(abi.encode(address(this), block.chainid, streamId, recipient, preimage));
+    }
+
+    /// @notice Commit before revealing a secret. A copied commitment cannot authorize another wallet.
+    function commitClaim(uint256 streamId, bytes32 commitment) external nonReentrant {
+        Stream storage s = streams[streamId];
+        if (s.claimHash == bytes32(0)) revert InvalidClaim();
+        if (s.recipient != address(0)) revert AlreadyClaimed();
+        if (commitment == bytes32(0)) revert InvalidCommitment();
+        claimCommitments[streamId][msg.sender] = ClaimCommitment(commitment, block.number);
+    }
+
+    /// @notice Reveal after a commitment from a previous block. Secrets must be random and single-use.
     function claim(uint256 streamId, bytes calldata preimage) external nonReentrant {
         Stream storage s = streams[streamId];
         if (s.claimHash == bytes32(0)) revert InvalidClaim();
         if (s.recipient != address(0)) revert AlreadyClaimed();
         if (keccak256(preimage) != s.claimHash) revert InvalidClaim();
+        ClaimCommitment memory committed = claimCommitments[streamId][msg.sender];
+        if (committed.commitment != claimCommitmentHash(streamId, msg.sender, preimage)) revert InvalidCommitment();
+        if (block.number <= committed.blockNumber) revert CommitmentNotMature();
+        delete claimCommitments[streamId][msg.sender];
         s.recipient = msg.sender;
-        // H3: free the hash so it is reusable after lifecycle. Double-delete safe: guarded by != 0.
         bytes32 h = s.claimHash;
-        if (h != bytes32(0)) delete claimHashToStreamId[h];
+        // Keep the hash reserved permanently: its preimage is public after this transaction.
         emit Claimed(streamId, msg.sender, h);
     }
 
@@ -163,9 +181,7 @@ contract DripVault is ReentrancyGuard, Ownable {
         s.totalAmount = vestedAmt;
         s.end = block.timestamp; // freeze
         s.canceled = true;
-        // H3: free the hash so it is reusable after lifecycle. Double-delete safe: guarded by != 0
-        // (claim then cancel deletes twice, second delete is a no-op).
-        if (s.claimHash != bytes32(0)) delete claimHashToStreamId[s.claimHash];
+        // Retain the reservation, including when a canceled stream still awaits its claim.
         if (refund > 0) {
             IERC20(s.token).safeTransfer(s.sender, refund);
         }

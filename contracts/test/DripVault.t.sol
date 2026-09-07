@@ -47,6 +47,10 @@ contract DripVaultTest is Test {
         uint256 id = vault.createClaimableStream(address(token), 100 ether, 100, hash);
         vm.warp(block.timestamp + 10);
         // bob claims with preimage
+        bytes32 commitment = vault.claimCommitmentHash(id, bob, "alice@example.com");
+        vm.prank(bob);
+        vault.commitClaim(id, commitment);
+        vm.roll(block.number + 1);
         vm.prank(bob);
         vault.claim(id, "alice@example.com");
         vm.warp(block.timestamp + 40);

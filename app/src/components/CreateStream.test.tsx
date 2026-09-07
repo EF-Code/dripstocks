@@ -6,6 +6,7 @@ import { CreateStream } from "./CreateStream";
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: undefined }),
   useChainId: () => 84532,
+  usePublicClient: () => undefined,
   useReadContract: () => ({ data: undefined }),
   useWriteContract: () => ({ writeContract: vi.fn(), data: undefined, isPending: false, error: null }),
   useWaitForTransactionReceipt: () => ({ isSuccess: false }),

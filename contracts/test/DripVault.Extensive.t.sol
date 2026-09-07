@@ -97,6 +97,10 @@ contract DripVaultExtensiveTest is Test {
         uint256 id = vault.createClaimableStream(address(token), 100 ether, 1000, h);
         (, address recBefore,,,,,,,) = vault.streams(id);
         assertEq(recBefore, address(0));
+        bytes32 commitment = vault.claimCommitmentHash(id, alice, "alice@example.com");
+        vm.prank(alice);
+        vault.commitClaim(id, commitment);
+        vm.roll(block.number + 1);
         vm.prank(alice);
         vault.claim(id, "alice@example.com");
         (, address recAfter,,,,,,,) = vault.streams(id);
@@ -116,6 +120,10 @@ contract DripVaultExtensiveTest is Test {
         bytes32 h = keccak256("once");
         vm.prank(sender);
         uint256 id = vault.createClaimableStream(address(token), 10 ether, 100, h);
+        bytes32 commitment = vault.claimCommitmentHash(id, alice, "once");
+        vm.prank(alice);
+        vault.commitClaim(id, commitment);
+        vm.roll(block.number + 1);
         vm.prank(alice);
         vault.claim(id, "once");
         vm.prank(bob);

@@ -15,6 +15,8 @@ contract Handler is Test {
     MockInv token;
     address[] actors;
     uint256[] streamIds;
+    mapping(uint256 => bytes) preimages;
+    uint256 public successfulClaims;
     uint256 public ghost_warpSum;
 
     constructor(DripVault _vault, MockInv _token, address[] memory _actors) {
@@ -56,6 +58,7 @@ contract Handler is Test {
         vm.prank(actor);
         try vault.createClaimableStream(address(token), amount, duration, h) returns (uint256 id) {
             streamIds.push(id);
+            preimages[id] = abi.encodePacked(claimSeed);
         } catch {}
     }
 
@@ -65,14 +68,17 @@ contract Handler is Test {
         // try to claim if claimable
         (,,,,,,,, bytes32 h) = vault.streams(id);
         if (h == bytes32(0)) return;
-        (address rec,,,,,,,,) = vault.streams(id);
+        (,address rec,,,,,,,) = vault.streams(id);
         if (rec != address(0)) return;
         address claimer = _randActor(claimSeed);
+        bytes memory preimage = preimages[id];
+        bytes32 commitment = vault.claimCommitmentHash(id, claimer, preimage);
         vm.prank(claimer);
-        try vault.claim(id, abi.encodePacked(claimSeed)) {} catch {}
-        // also try correct preimage if we know it: we used keccak(claimSeed) so try correct
+        vault.commitClaim(id, commitment);
+        vm.roll(block.number + 1);
         vm.prank(claimer);
-        try vault.claim(id, abi.encodePacked(claimSeed)) {} catch {}
+        vault.claim(id, preimage);
+        successfulClaims++;
     }
 
     function withdraw(uint256 streamSeed, uint256 actorSeed) public {
@@ -151,6 +157,19 @@ contract DripVaultInvariantTest is Test {
     }
 
     // Invariant: withdrawable never exceeds vested, vested never exceeds total
+    function test_HandlerExercisesSuccessfulClaims() public {
+        handler.createClaimable(0, 1 ether, 1 days, 12345);
+        handler.claim(0, 1);
+        assertEq(handler.successfulClaims(), 1);
+    }
+
+    function invariant_ClaimHashReservationsPersist() public view {
+        for (uint256 i = 0; i < vault.nextStreamId(); i++) {
+            (,,,,,,,,bytes32 hash) = vault.streams(i);
+            if (hash != bytes32(0)) assertEq(vault.claimHashToStreamId(hash), i + 1);
+        }
+    }
+
     function invariant_WithdrawableLeVestedAndVestedLeTotal() public view {
         uint256 n = vault.nextStreamId();
         for (uint256 i = 0; i < n; i++) {

@@ -1,3 +1,4 @@
+import { isAddress, zeroAddress, parseAbi } from "viem";
 // B20 Tokenized Stocks on Base - from docs.base.org/base-chain/asset-issuance/tokenized-stocks-on-base
 // Addresses are precompiles (no bytecode on Basescan), verified via Base docs
 export const B20_TOKENS = {
@@ -90,7 +91,7 @@ export function getTokens(chainId?: number): Record<B20Symbol, TokenInfo> {
 }
 
 export function isTokenConfigured(t: Pick<TokenInfo, "address">): boolean {
-  return t.address !== ZERO_TOKEN;
+  return isAddress(t.address) && t.address.toLowerCase() !== zeroAddress;
 }
 
 export const B20_ADDRESSES = Object.values(B20_TOKENS).map((t) => t.address);
@@ -112,6 +113,18 @@ export const B20_ABI = [
 ] as const;
 
 export const DRIP_VAULT_ABI = [
+  ...parseAbi([
+    "error ZeroAddress()", "error ZeroAmount()", "error ZeroDuration()",
+    "error NotRecipient()", "error NotSender()", "error StreamCanceled()",
+    "error NothingToWithdraw()", "error AlreadyClaimed()", "error InvalidClaim()",
+    "error InvalidCommitment()", "error CommitmentNotMature()",
+    "error ERC20InsufficientBalance(address sender,uint256 balance,uint256 needed)",
+    "error ERC20InsufficientAllowance(address spender,uint256 allowance,uint256 needed)",
+  ]),
+  { type: "function", name: "claimProtocolVersion", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "pure" },
+  { type: "function", name: "commitClaim", inputs: [{ name: "streamId", type: "uint256" }, { name: "commitment", type: "bytes32" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "claimCommitmentHash", inputs: [{ name: "streamId", type: "uint256" }, { name: "claimant", type: "address" }, { name: "preimage", type: "bytes" }], outputs: [{ type: "bytes32" }], stateMutability: "view" },
+  { type: "event", name: "StreamCreated", inputs: [{ name: "streamId", type: "uint256", indexed: true }, { name: "sender", type: "address", indexed: true }, { name: "recipient", type: "address", indexed: true }, { name: "token", type: "address", indexed: false }, { name: "amount", type: "uint256", indexed: false }, { name: "duration", type: "uint256", indexed: false }, { name: "claimHash", type: "bytes32", indexed: false }] },
   { type: "function", name: "createStream", inputs: [{ name: "recipient", type: "address" }, { name: "token", type: "address" }, { name: "amount", type: "uint256" }, { name: "duration", type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "nonpayable" },
   { type: "function", name: "createClaimableStream", inputs: [{ name: "token", type: "address" }, { name: "amount", type: "uint256" }, { name: "duration", type: "uint256" }, { name: "claimHash", type: "bytes32" }], outputs: [{ type: "uint256" }], stateMutability: "nonpayable" },
   { type: "function", name: "claim", inputs: [{ name: "streamId", type: "uint256" }, { name: "preimage", type: "bytes" }], outputs: [], stateMutability: "nonpayable" },
@@ -136,9 +149,8 @@ export const DRIP_VAULT_ADDRESSES: Record<8453 | 84532, `0x${string}`> = {
 };
 
 export function getVaultAddress(chainId?: number): `0x${string}` {
-  if (chainId === 8453) return DRIP_VAULT_ADDRESSES[8453];
-  if (chainId === 84532) return DRIP_VAULT_ADDRESSES[84532];
-  return DRIP_VAULT_ADDRESS;
+  const address = chainId === 8453 || chainId === 84532 ? DRIP_VAULT_ADDRESSES[chainId] : ZERO_VAULT;
+  return isAddress(address) ? address : ZERO_VAULT;
 }
 
 /** @deprecated Use getVaultAddress(chainId) / DRIP_VAULT_ADDRESSES. Kept to avoid breaking imports. */

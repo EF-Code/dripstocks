@@ -164,59 +164,35 @@ contract YtHypothesesTest is Test {
         console2.log("H2 zero amount/duration/token/recipient now validated");
     }
 
-    // H3: claimHash reuse (fixed: reusable after claim/cancel)
-    function test_H3_ClaimHashSquatting() public {
+    // Revealed secrets must never be recycled, including canceled streams.
+    function test_H3_ClaimHashPermanentlyReserved() public {
         ERC20Mock m = ERC20Mock(address(mock));
         m.mint(sender, 10 ether);
-        m.mint(bob, 10 ether);
         vm.prank(sender);
         m.approve(address(vault), 10 ether);
-        vm.prank(bob);
-        m.approve(address(vault), 10 ether);
-        bytes32 hash = keccak256("alice@example.com");
+        bytes32 hash = keccak256("single-use-secret");
         vm.prank(sender);
-        uint256 id1 = vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        // duplicate while live still blocked
-        vm.prank(bob);
+        uint256 id = vault.createClaimableStream(address(m), 1 ether, 100, hash);
+        _commit(id, alice, "single-use-secret");
+        vm.prank(alice);
+        vault.claim(id, "single-use-secret");
+        assertEq(vault.claimHashToStreamId(hash), id + 1);
+        vm.prank(sender);
         vm.expectRevert(DripVault.AlreadyClaimed.selector);
         vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        // FIXED: after claim, hash freed -> reuse succeeds
-        vm.prank(alice);
-        vault.claim(id1, "alice@example.com");
-        assertEq(vault.claimHashToStreamId(hash), 0, "hash freed on claim");
-        vm.prank(bob);
-        uint256 id2 = vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        assertEq(vault.claimHashToStreamId(hash), id2 + 1, "reuse after claim works");
-        // FIXED: after cancel of reused stream, hash freed again -> reuse succeeds
-        vm.prank(bob);
-        vault.cancel(id2);
-        assertEq(vault.claimHashToStreamId(hash), 0, "hash freed on cancel");
         vm.prank(sender);
-        uint256 id3 = vault.createClaimableStream(address(m), 1 ether, 100, hash);
-        assertEq(vault.claimHashToStreamId(hash), id3 + 1, "reuse after cancel works");
-        // FIXED: cancel path with fresh hash also reusable
-        bytes32 hash2 = keccak256("bob@example.com");
-        vm.prank(sender);
-        uint256 id4 = vault.createClaimableStream(address(m), 1 ether, 100, hash2);
-        vm.prank(sender);
-        vault.cancel(id4);
-        vm.prank(sender);
-        uint256 id5 = vault.createClaimableStream(address(m), 1 ether, 100, hash2);
-        assertEq(vault.claimHashToStreamId(hash2), id5 + 1, "cancel-reuse works");
-        // squat is now temporary: attacker pre-squat blocks only until released
-        bytes32 victimHash = keccak256("victim@example.com");
-        vm.prank(bob);
-        uint256 squatId = vault.createClaimableStream(address(m), 0.01 ether, 100, victimHash);
+        vault.cancel(id);
+        assertEq(vault.claimHashToStreamId(hash), id + 1);
         vm.prank(sender);
         vm.expectRevert(DripVault.AlreadyClaimed.selector);
-        vault.createClaimableStream(address(m), 5 ether, 100, victimHash);
-        // after squatter cancels, victim can reuse
-        vm.prank(bob);
-        vault.cancel(squatId);
-        vm.prank(sender);
-        uint256 victimId = vault.createClaimableStream(address(m), 5 ether, 100, victimHash);
-        assertEq(vault.claimHashToStreamId(victimHash), victimId + 1, "squat released after cancel");
-        console2.log("H3 reuse after claim/cancel now works");
+        vault.createClaimableStream(address(m), 1 ether, 100, hash);
+    }
+
+    function _commit(uint256 id, address claimer, bytes memory secret) internal {
+        bytes32 commitment = vault.claimCommitmentHash(id, claimer, secret);
+        vm.prank(claimer);
+        vault.commitClaim(id, commitment);
+        vm.roll(block.number + 1);
     }
 
     // H4b: claim now has nonReentrant - reentrant claim during creation is blocked
@@ -233,6 +209,7 @@ contract YtHypothesesTest is Test {
         malToken.mint(sender, 10 ether);
         malToken.setVault(address(vault));
         malToken.setAttack(claimId, "secret");
+        _commit(claimId, address(malToken), "secret");
         vm.prank(sender);
         malToken.approve(address(vault), 10 ether);
         // creating stream with malicious token triggers reenter to claim,
@@ -243,6 +220,7 @@ contract YtHypothesesTest is Test {
         (, address recAfter,,,,,,,) = vault.streams(claimId);
         assertEq(recAfter, address(0), "reentrant claim blocked, still unclaimed");
         // legitimate claim still works afterwards
+        _commit(claimId, alice, "secret");
         vm.prank(alice);
         vault.claim(claimId, "secret");
         (, address recFinal,,,,,,,) = vault.streams(claimId);
@@ -250,7 +228,7 @@ contract YtHypothesesTest is Test {
         console2.log("H4b reentrant claim blocked, legit claim works", recFinal);
     }
 
-    function test_H4_FrontRunClaimSteal() public {
+    function test_H4_GuessableSecretStillUnsafe() public {
         ERC20Mock m = ERC20Mock(address(mock));
         m.mint(sender, 10 ether);
         vm.prank(sender);
@@ -258,7 +236,8 @@ contract YtHypothesesTest is Test {
         bytes32 h = keccak256("alice@example.com"); // low entropy email
         vm.prank(sender);
         uint256 id = vault.createClaimableStream(address(m), 10 ether, 1000, h);
-        // attacker knows email (public), front-runs claim before alice
+        // Low entropy secrets remain unsafe: an attacker can guess and commit in advance.
+        _commit(id, bob, "alice@example.com");
         vm.prank(bob);
         vault.claim(id, "alice@example.com");
         (, address rec,,,,,,,) = vault.streams(id);
@@ -330,6 +309,7 @@ contract YtHypothesesTest is Test {
         vm.expectRevert(DripVault.NotRecipient.selector);
         vault.withdraw(id);
         // even if someone claims now, they can get vested? Let's see
+        _commit(id, alice, "ghost");
         vm.prank(alice);
         vault.claim(id, "ghost");
         vm.prank(alice);

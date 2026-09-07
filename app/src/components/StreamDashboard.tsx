@@ -1,213 +1,175 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { formatUnits } from "viem";
+import { useEffect, useRef, useState } from "react";
+import { useAccount, useChainId, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { useQueryClient } from "@tanstack/react-query";
+import { encodeAbiParameters, formatUnits, keccak256, maxUint256, zeroAddress, type Hex } from "viem";
 import { DRIP_VAULT_ABI, getVaultAddress } from "@/lib/b20";
+import { describeTransactionError } from "@/lib/transaction";
 
-function Ticking({ start, end, total, withdrawn }: { start: bigint; end: bigint; total: bigint; withdrawn: bigint }) {
-  // NOTE: client-clock estimate via Date.now(). Chain accounting uses
-  // block.timestamp, so this display may diverge by seconds/skew — the
-  // contract's withdrawable() is the source of truth at withdraw time.
-  const [now, setNow] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
-  useEffect(() => {
-    const id = setInterval(() => setNow(BigInt(Math.floor(Date.now() / 1000))), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const zero = BigInt(0);
-  const hundred = BigInt(100);
-  const vested = now < start ? zero : now >= end ? total : (total * (now - start)) / (end - start);
-  const withdrawable = vested > withdrawn ? vested - withdrawn : zero;
-  const pct = total === zero ? 0 : Number((vested * hundred) / total);
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex justify-between text-xs">
-        <span className="text-muted">Vested</span>
-        <span className="font-mono tnum">{formatUnits(vested, 18)} / {formatUnits(total, 18)}</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-ink/10">
-        <div className="h-full rounded-full bg-mint transition-[width]" style={{ width: `${pct}%` }} />
-      </div>
-      <div className="flex justify-between text-xs">
-        <span className="text-muted">Withdrawable</span>
-        <span className="font-mono font-semibold text-mintdim tnum">{formatUnits(withdrawable, 18)}</span>
-      </div>
-      <div className="font-mono text-[10px] text-muted tnum">+{(Number(total) / Number(end - start || BigInt(1)) / 1e18).toExponential(2)}/s</div>
-    </div>
-  );
+export function parseStreamId(value: string): bigint | null {
+  if (!/^\d{1,78}$/.test(value.trim())) return null;
+  const id = BigInt(value.trim());
+  return id <= maxUint256 ? id : null;
 }
 
-function StatusChip({ canceled, ended }: { canceled: boolean; ended: boolean }) {
-  if (canceled) return <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-semibold text-muted">CANCELED</span>;
-  if (ended) return <span className="rounded-full bg-baseblue/10 px-2 py-0.5 text-[10px] font-semibold text-baseblue">FULLY VESTED</span>;
-  return (
-    <span className="flex items-center gap-1 rounded-full bg-mint/15 px-2 py-0.5 text-[10px] font-semibold text-mintdim">
-      <span className="live-dot h-1 w-1 animate-livedot rounded-full bg-mint" /> STREAMING
-    </span>
-  );
-}
-
-export function StreamDashboard({ highlightId }: { highlightId?: bigint | null }) {
-  const { address } = useAccount();
+function useVaultTransaction(vault: Hex) {
+  const { address, chainId: walletChain, status } = useAccount();
   const chainId = useChainId();
-  const vaultAddress = getVaultAddress(chainId);
-  const { data: nextId } = useReadContract({
-    address: vaultAddress,
-    abi: DRIP_VAULT_ABI,
-    functionName: "nextStreamId",
-    query: { enabled: vaultAddress !== "0x0000000000000000000000000000000000000000", refetchInterval: 5000 },
-  });
-
-  const { writeContract, data: hash } = useWriteContract();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash });
-
-  const [ids, setIds] = useState<bigint[]>([]);
-  useEffect(() => {
-    if (nextId !== undefined) {
-      const n = Number(nextId);
-      // Bounded recent window; per-row filtering below keeps only streams
-      // involving the connected wallet (sender or recipient).
-      const all = Array.from({ length: Math.min(n, 25) }, (_, i) => BigInt(n - 1 - i));
-      setIds(all);
-    }
-  }, [nextId, isSuccess]);
-
-  if (!address) return <div className="text-sm text-muted">Connect to see streams. Demo runs on Base Sepolia with mock tokens.</div>;
-  if (vaultAddress === "0x0000000000000000000000000000000000000000") {
-    return (
-      <div className="rounded-xl border border-dashed border-hairline p-6 text-center">
-        <div className="text-sm font-semibold">No vault deployed yet</div>
-        <div className="mt-1 text-xs text-muted">Deploy <code>DripVault.sol</code> to Base Sepolia:</div>
-        <pre className="mt-2 overflow-auto rounded-lg bg-panel p-3 text-left font-mono text-xs text-white">forge script script/DeployTestnet.s.sol --rpc-url $BASE_SEPOLIA_RPC --private-key $PRIVATE_KEY --broadcast</pre>
-        <div className="mt-2 text-xs text-muted">Add the address as NEXT_PUBLIC_DRIP_VAULT_SEPOLIA, then redeploy the frontend.</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted">Only streams where you are sender or recipient.</p>
-      <ClaimPanel vaultAddress={vaultAddress} />
-      {ids.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-hairline p-6 text-center text-sm text-muted">
-          No streams yet. Fund one on the left — it will tick live here.
-        </div>
-      ) : (
-        ids.map((id) => (
-          <StreamRow key={id.toString()} id={id} highlight={highlightId === id} connected={address} vaultAddress={vaultAddress} onWithdraw={(sid) => writeContract({ address: vaultAddress, abi: DRIP_VAULT_ABI, functionName: "withdraw", args: [sid] })} onCancel={(sid) => writeContract({ address: vaultAddress, abi: DRIP_VAULT_ABI, functionName: "cancel", args: [sid] })} />
-        ))
-      )}
-      {hash && <div className="break-all font-mono text-xs text-muted tnum">tx: {hash}</div>}
-    </div>
-  );
+  const client = usePublicClient({ chainId });
+  const { writeContractAsync } = useWriteContract();
+  const queries = useQueryClient();
+  const lock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [hash, setHash] = useState<Hex>();
+  const [error, setError] = useState<string>();
+  const [confirmed, setConfirmed] = useState(false);
+  const send = async (functionName: "withdraw" | "cancel" | "claim" | "commitClaim", args: readonly [bigint] | readonly [bigint, Hex]) => {
+    if (lock.current || !client || !address || status !== "connected" || walletChain !== chainId || vault === zeroAddress) return false;
+    lock.current = true; setBusy(true); setError(undefined); setHash(undefined); setConfirmed(false);
+    try {
+      await client.simulateContract({ address: vault, abi: DRIP_VAULT_ABI, functionName, args, account: address });
+      const tx = await writeContractAsync({ address: vault, abi: DRIP_VAULT_ABI, functionName, args, account: address, chainId });
+      setHash(tx);
+      const receipt = await client.waitForTransactionReceipt({ hash: tx, confirmations: functionName === "commitClaim" ? 2 : 1 });
+      if (receipt.status !== "success") throw new Error("reverted");
+      setConfirmed(true);
+      await queries.invalidateQueries({ queryKey: ["readContract"] });
+      return true;
+    } catch (e) { setError(describeTransactionError(e)); return false; }
+    finally { lock.current = false; setBusy(false); }
+  };
+  return { send, busy, hash, error, confirmed };
 }
 
-function ClaimPanel({ vaultAddress }: { vaultAddress: `0x${string}` }) {
+function TransactionStatus({ hash, busy, confirmed, error }: { hash?: Hex; busy: boolean; confirmed: boolean; error?: string }) {
+  return <>
+    {busy && <p role="status" className="text-xs text-muted">{hash ? "Waiting for confirmation…" : "Check your wallet…"}</p>}
+    {hash && <p className="break-all font-mono text-xs text-muted">tx: {hash}{confirmed && " ✓ confirmed"}</p>}
+    {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+  </>;
+}
+
+export function StreamDashboard({ highlightId, vaultAddress }: { highlightId?: bigint | null; vaultAddress?: Hex }) {
+  const { address, chainId: walletChain, status } = useAccount();
+  const chainId = useChainId();
+  if (status === "reconnecting" || status === "connecting") return <p>Restoring wallet connection…</p>;
+  if (!address) return <div className="text-sm text-muted">Connect to see streams. Demo runs on Base Sepolia with mock tokens.</div>;
+  if (!vaultAddress && walletChain !== chainId) return <p role="alert">Switch your wallet to Base Sepolia to manage streams.</p>;
+  const vault = vaultAddress ?? getVaultAddress(chainId);
+  if (vault === zeroAddress) return <p>No vault configured on this network.</p>;
+  return <Dashboard key={`${chainId}:${vault}:${address}`} address={address} chainId={chainId as 8453 | 84532} vault={vault} highlightId={highlightId} />;
+}
+
+function Dashboard({ address, chainId, vault, highlightId }: { address: Hex; chainId: 8453 | 84532; vault: Hex; highlightId?: bigint | null }) {
+  const { data: nextId, isError, refetch } = useReadContract({ address: vault, abi: DRIP_VAULT_ABI, functionName: "nextStreamId", chainId, query: { refetchInterval: 5000 } });
+  const [cursor, setCursor] = useState<bigint | null>(null);
+  const [lookup, setLookup] = useState("");
+  const [selected, setSelected] = useState<bigint | null>(highlightId ?? null);
+  const [lookupError, setLookupError] = useState("");
+  const end = cursor ?? nextId ?? 0n;
+  const start = end > 25n ? end - 25n : 0n;
+  const ids = Array.from({ length: Number(end - start) }, (_, i) => end - 1n - BigInt(i));
+  return <div className="space-y-3">
+    <p className="text-xs text-muted">Only streams where you are sender or recipient. Browse older pages or look up any stream by ID.</p>
+    <ClaimPanel vault={vault} chainId={chainId} address={address} />
+    <form className="flex gap-2" onSubmit={(e) => {
+      e.preventDefault(); const id = parseStreamId(lookup);
+      if (id === null) { setLookupError("Enter a valid stream ID."); return; }
+      setLookupError(""); setSelected(id);
+    }}>
+      <input aria-label="Find stream ID" value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="Stream ID" className="min-w-0 flex-1 rounded-lg border border-hairline px-2 py-1 text-sm" />
+      <button className="rounded-full border border-hairline px-3 py-1 text-sm">Find stream</button>
+    </form>
+    {lookupError && <p role="alert">{lookupError}</p>}
+    {selected !== null && <div className="space-y-2 rounded-xl border border-baseblue p-2">
+      <StreamRow id={selected} vault={vault} chainId={chainId} connected={address} explicit />
+      <button onClick={() => setSelected(null)} className="text-xs underline">Close lookup</button>
+    </div>}
+    {isError ? <p role="alert">Could not load streams. <button onClick={() => refetch()} className="underline">Retry</button></p>
+      : nextId === undefined ? <p role="status">Loading streams…</p>
+      : nextId === 0n ? <p>No streams yet. Create one to get started.</p>
+      : <>
+        <p className="text-xs text-muted">Checking IDs {start.toString()}–{(end - 1n).toString()}. If none belong to you, try an older page.</p>
+        {ids.map((id) => <StreamRow key={id.toString()} id={id} vault={vault} chainId={chainId} connected={address} />)}
+        <div className="flex justify-between">
+          <button disabled={cursor === null} onClick={() => setCursor(null)} className="text-sm underline disabled:opacity-40">Latest streams</button>
+          <button disabled={start === 0n} onClick={() => setCursor(start)} className="text-sm underline disabled:opacity-40">Older streams</button>
+        </div>
+      </>}
+  </div>;
+}
+
+function ClaimPanel({ vault, chainId, address }: { vault: Hex; chainId: 8453 | 84532; address: Hex }) {
   const [streamId, setStreamId] = useState("");
   const [secret, setSecret] = useState("");
-  const [formError, setFormError] = useState<string | null>(null);
-  const { writeContract, data: hash, isPending } = useWriteContract();
-  const handleClaim = () => {
-    setFormError(null);
-    if (!/^\d+$/.test(streamId.trim())) {
-      setFormError("Enter a numeric stream ID.");
-      return;
-    }
-    if (!/^0x[0-9a-fA-F]{64}$/.test(secret.trim())) {
-      setFormError("Enter the 32-byte claim secret (0x plus 64 hex characters) shared with you off-chain.");
-      return;
-    }
-    writeContract({
-      address: vaultAddress,
-      abi: DRIP_VAULT_ABI,
-      functionName: "claim",
-      args: [BigInt(streamId.trim()), secret.trim() as `0x${string}`],
-    });
+  const [error, setError] = useState("");
+  const [prepared, setPrepared] = useState<string>();
+  const tx = useVaultTransaction(vault);
+  const { data: protocol, isPending } = useReadContract({ address: vault, abi: DRIP_VAULT_ABI, functionName: "claimProtocolVersion", chainId, query: { retry: false } });
+  const fingerprint = `${address}:${streamId.trim()}:${secret.trim()}`;
+  const ready = prepared === fingerprint;
+  const submit = async () => {
+    setError(""); const id = parseStreamId(streamId);
+    if (id === null) { setError("Enter a valid stream ID."); return; }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(secret.trim())) { setError("Enter the 32-byte secret shared privately with you."); return; }
+    if (protocol !== 2n) return;
+    const preimage = secret.trim() as Hex;
+    if (!ready) {
+      const commitment = keccak256(encodeAbiParameters(
+        [{ type: "address" }, { type: "uint256" }, { type: "uint256" }, { type: "address" }, { type: "bytes" }],
+        [vault, BigInt(chainId), id, address, preimage],
+      ));
+      if (await tx.send("commitClaim", [id, commitment])) setPrepared(fingerprint);
+    } else if (await tx.send("claim", [id, preimage])) { setSecret(""); setPrepared(undefined); }
   };
-  return (
-    <div className="space-y-2 rounded-xl border border-dashed border-hairline p-4">
-      <div className="text-xs font-semibold">Claim a stream with a secret</div>
-      <div className="flex gap-2">
-        <input value={streamId} onChange={(e) => { setStreamId(e.target.value); setFormError(null); }} placeholder="ID" aria-label="Stream ID" inputMode="numeric" className="w-20 rounded-lg border border-hairline bg-white px-2 py-1.5 font-mono text-xs outline-none focus:border-baseblue" />
-        <input value={secret} onChange={(e) => { setSecret(e.target.value); setFormError(null); }} placeholder="0x secret…" aria-label="Claim secret" className="min-w-0 flex-1 rounded-lg border border-hairline bg-white px-2 py-1.5 font-mono text-xs outline-none focus:border-baseblue" />
-        <button onClick={handleClaim} disabled={isPending} className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Claim</button>
-      </div>
-      {formError && <div role="alert" className="text-xs text-danger">{formError}</div>}
-      {hash && <div className="break-all font-mono text-xs text-muted tnum">tx: {hash}</div>}
-    </div>
-  );
+  return <div className="space-y-2 rounded-xl border border-dashed border-hairline p-4">
+    <p className="text-xs font-semibold">Claim a stream with a secret</p>
+    {protocol !== 2n && <p role="status" className="text-xs text-muted">{isPending ? "Checking claim support…" : "Secure claims require the updated vault. Claims are disabled on this legacy deployment; existing direct withdrawals and cancellation remain available."}</p>}
+    <fieldset disabled={tx.busy || protocol !== 2n} className="flex gap-2 disabled:opacity-50">
+      <input value={streamId} onChange={(e) => { setStreamId(e.target.value); setPrepared(undefined); }} aria-label="Claim stream ID" placeholder="ID" className="w-20 rounded-lg border px-2 py-1 text-xs" />
+      <input type="password" autoComplete="off" value={secret} onChange={(e) => { setSecret(e.target.value); setPrepared(undefined); }} aria-label="Claim secret" placeholder="Secret" className="min-w-0 flex-1 rounded-lg border px-2 py-1 text-xs" />
+      <button onClick={submit} className="rounded-full bg-ink px-3 py-1 text-xs text-white">{ready ? "Claim" : "Prepare claim"}</button>
+    </fieldset>
+    <p className="text-xs text-muted">Prepare first, then claim after confirmation. This binds the claim to your wallet before revealing the secret.</p>
+    {error && <p role="alert">{error}</p>}
+    <TransactionStatus {...tx} />
+  </div>;
 }
 
-function StreamRow({ id, highlight, connected, vaultAddress, onWithdraw, onCancel }: { id: bigint; highlight?: boolean; connected?: string; vaultAddress: `0x${string}`; onWithdraw: (id: bigint) => void; onCancel: (id: bigint) => void }) {
-  const { address: connectedNow } = useAccount();
-  const me = connected ?? connectedNow;
+function StreamRow({ id, vault, chainId, connected, explicit }: { id: bigint; vault: Hex; chainId: 8453 | 84532; connected: Hex; explicit?: boolean }) {
+  const { data, isError } = useReadContract({ address: vault, abi: DRIP_VAULT_ABI, functionName: "streams", args: [id], chainId, query: { refetchInterval: 3000 } });
+  const tx = useVaultTransaction(vault);
   const [confirming, setConfirming] = useState(false);
-  const { data } = useReadContract({
-    address: vaultAddress,
-    abi: DRIP_VAULT_ABI,
-    functionName: "streams",
-    args: [id],
-    query: { refetchInterval: 3000 },
-  });
-
-  if (!data) return <div className="h-24 animate-pulse rounded-xl bg-ink/5" />;
-  const [sender, recipient, token, total, withdrawn, start, end, canceled] = data as unknown as [string, string, string, bigint, bigint, bigint, bigint, boolean, string];
-
-  // Filter to streams involving the connected wallet (sender or recipient).
-  // Claimable-but-unclaimed rows have recipient == zero address: only the
-  // sender sees them until claimed.
-  if (me && sender.toLowerCase() !== me.toLowerCase() && recipient.toLowerCase() !== me.toLowerCase()) {
-    return null;
-  }
-
-  const isRecipient = !!me && recipient.toLowerCase() === me.toLowerCase();
-  const isSender = !!me && sender.toLowerCase() === me.toLowerCase();
-  const ended = BigInt(Math.floor(Date.now() / 1000)) >= end;
-
-  return (
-    <div className={`rounded-xl border border-hairline bg-white p-4 ${highlight ? "ring-2 ring-baseblue" : ""}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-muted tnum">#{id.toString()}</span>
-            <StatusChip canceled={canceled} ended={ended} />
-          </div>
-          <div className="mt-1 font-mono text-xs tnum">{sender.slice(0, 6)}… → {recipient.slice(0, 6)}… · {token.slice(0, 6)}…{token.slice(-4)}</div>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <button
-            onClick={() => onWithdraw(id)}
-            disabled={!isRecipient}
-            title={isRecipient ? "Withdraw vested amount" : "Only the recipient can withdraw (the contract reverts otherwise)"}
-            className="rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-          >
-            Withdraw
-          </button>
-          {isSender && !canceled && (
-            confirming ? (
-              <button
-                onClick={() => { setConfirming(false); onCancel(id); }}
-                onBlur={() => setConfirming(false)}
-                title="Confirm: refunds unvested to you and freezes vesting"
-                className="rounded-full bg-danger px-3 py-1.5 text-xs font-semibold text-white"
-              >
-                Confirm cancel?
-              </button>
-            ) : (
-              <button
-                onClick={() => setConfirming(true)}
-                title="Cancel stream: refunds unvested to you, freezes vesting"
-                className="rounded-full border border-hairline px-3 py-1.5 text-xs font-semibold hover:border-danger hover:text-danger"
-              >
-                Cancel
-              </button>
-            )
-          )}
-        </div>
-      </div>
-      <div className="mt-3">
-        <Ticking start={start} end={end} total={total} withdrawn={withdrawn} />
+  if (isError) return <p role="alert">Unable to read stream #{id.toString()}.</p>;
+  if (!data) return <p role="status">Loading #{id.toString()}…</p>;
+  const [sender, recipient, token, total, withdrawn, start, end, canceled] = data;
+  if (sender === zeroAddress) return explicit ? <p>No stream with that ID.</p> : null;
+  const isSender = sender.toLowerCase() === connected.toLowerCase();
+  const isRecipient = recipient.toLowerCase() === connected.toLowerCase();
+  if (!isSender && !isRecipient) return explicit ? <p>This stream belongs to another wallet.</p> : null;
+  return <div className="space-y-3 rounded-xl border border-hairline bg-white p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div className="font-mono text-xs">#{id.toString()} · {canceled ? "CANCELED" : "STREAM"}<br />{sender.slice(0, 6)}… → {recipient.slice(0, 6)}… · {token.slice(0, 6)}…{token.slice(-4)}</div>
+      <div className="flex gap-2">
+        <button disabled={!isRecipient || tx.busy || withdrawn >= total} onClick={() => tx.send("withdraw", [id])} className="rounded-full bg-ink px-3 py-1 text-xs text-white disabled:opacity-40">Withdraw</button>
+        {isSender && !canceled && <button disabled={tx.busy} onClick={() => { if (confirming) { setConfirming(false); void tx.send("cancel", [id]); } else setConfirming(true); }} className="rounded-full border px-3 py-1 text-xs disabled:opacity-40">{confirming ? "Confirm cancel?" : "Cancel"}</button>}
       </div>
     </div>
-  );
+    <Ticking start={start} end={end} total={total} withdrawn={withdrawn} canceled={canceled} />
+    <TransactionStatus {...tx} />
+  </div>;
+}
+
+function Ticking({ start, end, total, withdrawn, canceled }: { start: bigint; end: bigint; total: bigint; withdrawn: bigint; canceled: boolean }) {
+  const [now, setNow] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  useEffect(() => { const timer = setInterval(() => setNow(BigInt(Math.floor(Date.now() / 1000))), 1000); return () => clearInterval(timer); }, []);
+  const vested = canceled || now >= end ? total : now <= start ? 0n : total * (now - start) / (end - start);
+  const available = vested > withdrawn ? vested - withdrawn : 0n;
+  const pct = total ? Number(vested * 100n / total) : 0;
+  return <div className="space-y-2 text-xs">
+    <div className="flex justify-between"><span>Vested (estimate)</span><span className="font-mono">{formatUnits(vested, 18)} / {formatUnits(total, 18)}</span></div>
+    <div className="h-1.5 rounded-full bg-ink/10"><div className="h-full rounded-full bg-mint" style={{ width: `${pct}%` }} /></div>
+    <div className="flex justify-between"><span>Withdrawable (estimate)</span><span className="font-mono">{formatUnits(available, 18)}</span></div>
+    <p className="text-muted">{canceled ? "Vesting stopped at cancellation." : now >= end ? "Fully vested." : "Vests each second. Final withdrawal uses chain time."}</p>
+  </div>;
 }

@@ -8,13 +8,14 @@
 
 ## Flow
 - [ ] Connect wallet (Base Sepolia or Anvil)
-- [ ] Create stream: 0.1 AAPLc -> bob.base.eth, 7 days, verify tx + event
+- [ ] Create stream: 0.1 mock AAPLc -> recipient 0x address, 5 minutes, verify tx + event (names are not resolved)
 - [ ] Dashboard ticks live, withdraw 50% at +3.5d, verify vault balance
 - [ ] Cancel mid-stream, verify refund + frozen vest
-- [ ] Claimable: create with keccak(email), claim via preimage, withdraw
+- [ ] Claimable on protocol v2: generate a fresh 32-byte secret, create, prepare claim in recipient wallet, wait for confirmation, claim, withdraw
 - [ ] Batch: 3 recipients, each withdrawable
 - [ ] B20 multiplier: simulate via MockB20.setMultiplier, ensure vault still correct
-- [ ] Chainlink: read AAPL feed 0x787f... latestRoundData, verify staleness handling
+- [ ] Reload and reconnect; switch to unsupported network and verify writes are blocked
+- [ ] Older stream pagination and direct ID lookup still expose authorized withdrawals/cancellation
 
 ## Submit artifacts
 - [ ] Vercel deploy = Live Project Link

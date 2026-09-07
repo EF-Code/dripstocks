@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Space_Grotesk, Inter } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
@@ -12,7 +12,7 @@ const body = Inter({ variable: "--font-sans", subsets: ["latin"], weight: ["400"
 export const metadata: Metadata = {
   title: "DripStocks — Payroll that streams by the second",
   description: "Stream tokenized stocks per second on Base Sepolia. Direct streams, claim links, and batch payroll with live vesting.",
-  themeColor: "#0b1526",
+  metadataBase: new URL("https://dripstocks.vercel.app"),
   other: {
     "base:app_id": "6a9c0871384ac6b98c246e16",
   },
@@ -22,6 +22,8 @@ export const metadata: Metadata = {
     images: ["/og.png"],
   },
 };
+
+export const viewport: Viewport = { themeColor: "#0b1526" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

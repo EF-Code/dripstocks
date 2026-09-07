@@ -6,6 +6,7 @@ broadcast/
 # env - ignore .env but keep .env.example
 .env
 .env.local
+.env.*
 !*.env.example
 app/.env
 app/.env.local

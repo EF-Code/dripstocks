@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { AbiFunction } from "viem";
 import { B20_TOKENS, ONCHAIN_REGISTRY, DRIP_VAULT_ADDRESS, DRIP_VAULT_ADDRESSES, DRIP_VAULT_ABI, getVaultAddress, getTokens, isTokenConfigured, SEPOLIA_TOKENS } from "./b20";
 
 describe("B20 config", () => {
@@ -34,18 +35,18 @@ describe("B20 config", () => {
   });
 
   it("DRIP_VAULT_ABI matches DripVault.sol signatures", () => {
-    const byName = Object.fromEntries(DRIP_VAULT_ABI.map((e: any) => [e.name, e]));
+    const byName: Record<string, AbiFunction> = Object.fromEntries(DRIP_VAULT_ABI.filter((e) => e.type === "function").map((e) => [e.name, e]));
     // Existing entries kept
     for (const n of ["createStream", "vested", "withdrawable", "withdraw", "streams", "nextStreamId"]) {
       expect(byName[n]).toBeDefined();
     }
     // New entries
-    expect(byName.createClaimableStream.inputs.map((i: any) => i.type)).toEqual(["address", "uint256", "uint256", "bytes32"]);
-    expect(byName.createClaimableStream.inputs.map((i: any) => i.name)).toEqual(["token", "amount", "duration", "claimHash"]);
-    expect(byName.claim.inputs.map((i: any) => i.type)).toEqual(["uint256", "bytes"]);
-    expect(byName.cancel.inputs.map((i: any) => i.type)).toEqual(["uint256"]);
-    expect(byName.batchCreate.inputs.map((i: any) => i.type)).toEqual(["address[]", "address", "uint256", "uint256"]);
-    expect(byName.batchCreate.inputs.map((i: any) => i.name)).toEqual(["recipients", "token", "amountEach", "duration"]);
+    expect(byName.createClaimableStream.inputs.map((i) => i.type)).toEqual(["address", "uint256", "uint256", "bytes32"]);
+    expect(byName.createClaimableStream.inputs.map((i) => i.name)).toEqual(["token", "amount", "duration", "claimHash"]);
+    expect(byName.claim.inputs.map((i) => i.type)).toEqual(["uint256", "bytes"]);
+    expect(byName.cancel.inputs.map((i) => i.type)).toEqual(["uint256"]);
+    expect(byName.batchCreate.inputs.map((i) => i.type)).toEqual(["address[]", "address", "uint256", "uint256"]);
+    expect(byName.batchCreate.inputs.map((i) => i.name)).toEqual(["recipients", "token", "amountEach", "duration"]);
   });
 
   it("all tokens have unique addresses and feeds", () => {
