@@ -62,7 +62,7 @@ Then set the 7 logged addresses in `app/.env.local` and redeploy the frontend.
 
 ## Testing
 
-- Foundry: unit, edge-case, and proof tests (direct, claimable, batch, cancel, fuzz), plus 5 fork tests against Base mainnet (B20 metadata, Chainlink feeds) and a multi-actor invariant campaign. The current local audit uses 64 runs at depth 64; fork tests were not rerun.
+- Foundry: unit, edge-case, and proof tests (direct, claimable, batch, cancel, fuzz), plus 5 fork tests against Base mainnet (B20 metadata, Chainlink feeds) and a multi-actor invariant campaign. The current audit passed 64 local invariant runs at depth 64 and all 5 fork tests.
 - Prior legacy-vault end-to-end on Anvil: create → vest → withdraw, claimable claim → withdraw, batch payroll, and cancel with refund — all succeed.
 - Prior legacy-vault live end-to-end on Base Sepolia with two wallets, all replayable from the receipts in `TODO.md`: direct 1.5 NVDAc stream fully vested and withdrawn in full, claimable 0.5 AAPLc claimed by secret-holder with a linear partial withdraw, batch payroll to two recipients, and cancel with exact unvested refund.
 - Frontend: 37 vitest tests covering token configuration, wallet setup, and stream components.

@@ -15,7 +15,7 @@ Decided for the contest build. Testnet is Base Sepolia; there is no mainnet depl
 ## Token policy
 
 - Contract stays permissionless (any ERC20), matching the audited design.
-- App offers a curated list per chain: deployed mocks on Sepolia, real B20 precompiles on Base mainnet.
+- The public app is locked to Base Sepolia and offers the six deployed mocks. Mainnet B20 references remain in the library for future work, but the wallet config exposes no mainnet transaction path.
 
 ## Upgradeability and fees
 
