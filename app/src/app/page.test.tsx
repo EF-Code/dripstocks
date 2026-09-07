@@ -29,3 +29,8 @@ it("uses actual wallet network for unsupported-chain banner", () => {
   expect(screen.getByText("Unsupported network.")).toBeVisible();
   expect(screen.getByText("Switch to Base Sepolia")).toBeEnabled();
 });
+it("blocks Base mainnet because this release is testnet-only", () => {
+  state.connected = true; state.chainId = 8453; render(<Home />);
+  expect(screen.getByText("Unsupported network.")).toBeVisible();
+  expect(screen.getByText(/runs on Base Sepolia/)).toBeVisible();
+});

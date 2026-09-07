@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useChainId, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { encodeAbiParameters, formatUnits, keccak256, maxUint256, zeroAddress, type Hex } from "viem";
-import { DRIP_VAULT_ABI, getVaultAddress } from "@/lib/b20";
+import { DRIP_CHAIN_ID, DRIP_VAULT_ABI, getVaultAddress } from "@/lib/b20";
 import { describeTransactionError } from "@/lib/transaction";
 
 export function parseStreamId(value: string): bigint | null {
@@ -12,9 +12,8 @@ export function parseStreamId(value: string): bigint | null {
   return id <= maxUint256 ? id : null;
 }
 
-function useVaultTransaction(vault: Hex) {
+function useVaultTransaction(vault: Hex, chainId: typeof DRIP_CHAIN_ID) {
   const { address, chainId: walletChain, status } = useAccount();
-  const chainId = useChainId();
   const client = usePublicClient({ chainId });
   const { writeContractAsync } = useWriteContract();
   const queries = useQueryClient();
@@ -49,18 +48,18 @@ function TransactionStatus({ hash, busy, confirmed, error }: { hash?: Hex; busy:
   </>;
 }
 
-export function StreamDashboard({ highlightId, vaultAddress }: { highlightId?: bigint | null; vaultAddress?: Hex }) {
+export function StreamDashboard({ highlightId, vaultAddress, claimsEnabled = true }: { highlightId?: bigint | null; vaultAddress?: Hex; claimsEnabled?: boolean }) {
   const { address, chainId: walletChain, status } = useAccount();
-  const chainId = useChainId();
+  const chainId = DRIP_CHAIN_ID;
   if (status === "reconnecting" || status === "connecting") return <p>Restoring wallet connection…</p>;
   if (!address) return <div className="text-sm text-muted">Connect to see streams. Demo runs on Base Sepolia with mock tokens.</div>;
-  if (!vaultAddress && walletChain !== chainId) return <p role="alert">Switch your wallet to Base Sepolia to manage streams.</p>;
+  if (walletChain !== chainId) return <p role="alert">Switch your wallet to Base Sepolia to manage streams.</p>;
   const vault = vaultAddress ?? getVaultAddress(chainId);
   if (vault === zeroAddress) return <p>No vault configured on this network.</p>;
-  return <Dashboard key={`${chainId}:${vault}:${address}`} address={address} chainId={chainId as 8453 | 84532} vault={vault} highlightId={highlightId} />;
+  return <Dashboard key={`${chainId}:${vault}:${address}`} address={address} chainId={chainId} vault={vault} highlightId={highlightId} claimsEnabled={claimsEnabled} />;
 }
 
-function Dashboard({ address, chainId, vault, highlightId }: { address: Hex; chainId: 8453 | 84532; vault: Hex; highlightId?: bigint | null }) {
+function Dashboard({ address, chainId, vault, highlightId, claimsEnabled }: { address: Hex; chainId: typeof DRIP_CHAIN_ID; vault: Hex; highlightId?: bigint | null; claimsEnabled: boolean }) {
   const { data: nextId, isError, refetch } = useReadContract({ address: vault, abi: DRIP_VAULT_ABI, functionName: "nextStreamId", chainId, query: { refetchInterval: 5000 } });
   const [cursor, setCursor] = useState<bigint | null>(null);
   const [lookup, setLookup] = useState("");
@@ -71,7 +70,7 @@ function Dashboard({ address, chainId, vault, highlightId }: { address: Hex; cha
   const ids = Array.from({ length: Number(end - start) }, (_, i) => end - 1n - BigInt(i));
   return <div className="space-y-3">
     <p className="text-xs text-muted">Only streams where you are sender or recipient. Browse older pages or look up any stream by ID.</p>
-    <ClaimPanel vault={vault} chainId={chainId} address={address} />
+    {claimsEnabled && <ClaimPanel vault={vault} chainId={chainId} address={address} />}
     <form className="flex gap-2" onSubmit={(e) => {
       e.preventDefault(); const id = parseStreamId(lookup);
       if (id === null) { setLookupError("Enter a valid stream ID."); return; }
@@ -99,12 +98,12 @@ function Dashboard({ address, chainId, vault, highlightId }: { address: Hex; cha
   </div>;
 }
 
-function ClaimPanel({ vault, chainId, address }: { vault: Hex; chainId: 8453 | 84532; address: Hex }) {
+function ClaimPanel({ vault, chainId, address }: { vault: Hex; chainId: typeof DRIP_CHAIN_ID; address: Hex }) {
   const [streamId, setStreamId] = useState("");
   const [secret, setSecret] = useState("");
   const [error, setError] = useState("");
   const [prepared, setPrepared] = useState<string>();
-  const tx = useVaultTransaction(vault);
+  const tx = useVaultTransaction(vault, chainId);
   const { data: protocol, isPending } = useReadContract({ address: vault, abi: DRIP_VAULT_ABI, functionName: "claimProtocolVersion", chainId, query: { retry: false } });
   const fingerprint = `${address}:${streamId.trim()}:${secret.trim()}`;
   const ready = prepared === fingerprint;
@@ -136,9 +135,9 @@ function ClaimPanel({ vault, chainId, address }: { vault: Hex; chainId: 8453 | 8
   </div>;
 }
 
-function StreamRow({ id, vault, chainId, connected, explicit }: { id: bigint; vault: Hex; chainId: 8453 | 84532; connected: Hex; explicit?: boolean }) {
+function StreamRow({ id, vault, chainId, connected, explicit }: { id: bigint; vault: Hex; chainId: typeof DRIP_CHAIN_ID; connected: Hex; explicit?: boolean }) {
   const { data, isError } = useReadContract({ address: vault, abi: DRIP_VAULT_ABI, functionName: "streams", args: [id], chainId, query: { refetchInterval: 3000 } });
-  const tx = useVaultTransaction(vault);
+  const tx = useVaultTransaction(vault, chainId);
   const [confirming, setConfirming] = useState(false);
   if (isError) return <p role="alert">Unable to read stream #{id.toString()}.</p>;
   if (!data) return <p role="status">Loading #{id.toString()}…</p>;

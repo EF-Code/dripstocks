@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { AbiFunction } from "viem";
-import { B20_TOKENS, ONCHAIN_REGISTRY, DRIP_VAULT_ADDRESS, DRIP_VAULT_ADDRESSES, DRIP_VAULT_ABI, getVaultAddress, getTokens, isTokenConfigured, normalizeVaultAddress, SEPOLIA_TOKENS } from "./b20";
+import { B20_TOKENS, ONCHAIN_REGISTRY, DRIP_CHAIN_ID, DRIP_VAULT_ADDRESS, DRIP_VAULT_ADDRESSES, DRIP_VAULT_ABI, getVaultAddress, getTokens, isTokenConfigured, normalizeVaultAddress, SEPOLIA_TOKENS } from "./b20";
 
 describe("B20 config", () => {
   it("has 6 tokens with correct checksum addresses", () => {
@@ -21,7 +21,11 @@ describe("B20 config", () => {
     expect(B20_TOKENS.NVDAc.address.toLowerCase().startsWith("0xb200")).toBe(true);
   });
 
-  it("DRIP_VAULT_ADDRESS defaults to zero if not set (deprecated fallback)", () => {
+  it("uses Base Sepolia as the only transaction chain", () => {
+    expect(DRIP_CHAIN_ID).toBe(84532);
+  });
+
+  it("DRIP_VAULT_ADDRESS defaults to the explicit Sepolia value", () => {
     // In test env NEXT_PUBLIC_DRIP_VAULT* not set
     expect(DRIP_VAULT_ADDRESS).toBe("0x0000000000000000000000000000000000000000");
   });
@@ -34,13 +38,14 @@ describe("B20 config", () => {
     expect(getVaultAddress(undefined)).toBe(DRIP_VAULT_ADDRESS);
   });
 
-  it("normalizeVaultAddress repairs checksum casing instead of bricking to zero", () => {
-    // Prod v2 vault was once deployed with a single mis-cased checksum char (fe vs Fe);
-    // the UI must resolve it to the checksummed address, not the zero address.
+  it("accepts lowercase or valid EIP-55 configuration and rejects bad mixed case", () => {
     expect(normalizeVaultAddress("0x115fe60FD510c04fC765D06241623eAda42529B2")).toBe(
-      "0x115Fe60FD510c04fC765D06241623eAda42529B2",
+      "0x0000000000000000000000000000000000000000",
     );
     expect(normalizeVaultAddress("0x115fe60fd510c04fc765d06241623eada42529b2")).toBe(
+      "0x115Fe60FD510c04fC765D06241623eAda42529B2",
+    );
+    expect(normalizeVaultAddress("0x115Fe60FD510c04fC765D06241623eAda42529B2")).toBe(
       "0x115Fe60FD510c04fC765D06241623eAda42529B2",
     );
     expect(normalizeVaultAddress("0x0000000000000000000000000000000000000000")).toBe(

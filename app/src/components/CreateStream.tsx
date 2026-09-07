@@ -1,8 +1,8 @@
 "use client";
 import { useRef, useState } from "react";
-import { useAccount, useChainId, usePublicClient, useWriteContract, useReadContract } from "wagmi";
+import { useAccount, usePublicClient, useWriteContract, useReadContract } from "wagmi";
 import { isAddress, keccak256, toHex, formatUnits, maxUint256, decodeEventLog, type Hex } from "viem";
-import { getTokens, B20_ABI, DRIP_VAULT_ABI, getVaultAddress, isTokenConfigured, type B20Symbol } from "@/lib/b20";
+import { getTokens, B20_ABI, DRIP_CHAIN_ID, DRIP_VAULT_ABI, getVaultAddress, isTokenConfigured, type B20Symbol } from "@/lib/b20";
 import { parseAmount, parseDuration } from "@/lib/stream-input";
 import { describeTransactionError } from "@/lib/transaction";
 
@@ -15,7 +15,7 @@ const hintCls = "text-xs text-muted";
 
 export function CreateStream() {
   const { address, chainId: walletChain, status } = useAccount();
-  const chainId = useChainId();
+  const chainId = DRIP_CHAIN_ID;
   const client = usePublicClient({ chainId });
   const vaultAddress = getVaultAddress(chainId);
   const TOKENS = getTokens(chainId);

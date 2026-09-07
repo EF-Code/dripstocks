@@ -45,6 +45,17 @@ describe("stream access regressions", () => {
     state.chainId = 1; mount(); expect(screen.getByRole("alert")).toHaveTextContent("Switch your wallet");
     expect(screen.queryByText("Prepare claim")).toBeNull();
   });
+  it("blocks an explicit legacy vault override on the wrong chain", () => {
+    state.chainId = 8453;
+    render(<QueryClientProvider client={new QueryClient()}><StreamDashboard vaultAddress={vault} claimsEnabled={false} /></QueryClientProvider>);
+    expect(screen.getByRole("alert")).toHaveTextContent("Switch your wallet");
+    expect(state.write).not.toHaveBeenCalled();
+  });
+  it("omits unsafe legacy claim controls while preserving stream management", () => {
+    render(<QueryClientProvider client={new QueryClient()}><StreamDashboard vaultAddress={vault} claimsEnabled={false} /></QueryClientProvider>);
+    expect(screen.queryByText("Prepare claim")).toBeNull();
+    expect(screen.getByText("Older streams")).toBeEnabled();
+  });
   it("bounds IDs without Number precision loss", () => {
     expect(parseStreamId("9007199254740993")).toBe(9007199254740993n);
     expect(parseStreamId((maxUint256 + 1n).toString())).toBeNull();

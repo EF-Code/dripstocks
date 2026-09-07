@@ -95,6 +95,7 @@ export function isTokenConfigured(t: Pick<TokenInfo, "address">): boolean {
 }
 
 export const B20_ADDRESSES = Object.values(B20_TOKENS).map((t) => t.address);
+export const DRIP_CHAIN_ID = 84532 as const;
 
 export const ONCHAIN_REGISTRY = "0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD" as const;
 
@@ -137,15 +138,13 @@ export const DRIP_VAULT_ABI = [
   { type: "function", name: "nextStreamId", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
 ] as const;
 
-// Per-chain vault addresses. Reads NEXT_PUBLIC_DRIP_VAULT_BASE (8453) and
-// NEXT_PUBLIC_DRIP_VAULT_SEPOLIA (84532), falling back to legacy
-// NEXT_PUBLIC_DRIP_VAULT for compat. Unset chains default to zero address.
+// Per-chain vault addresses. There is no shared fallback: a Sepolia value must
+// never silently configure the same address on Base mainnet.
 const ZERO_VAULT = "0x0000000000000000000000000000000000000000" as const;
-const legacyVault = (process.env.NEXT_PUBLIC_DRIP_VAULT as `0x${string}` | undefined) || ZERO_VAULT;
 
 export const DRIP_VAULT_ADDRESSES: Record<8453 | 84532, `0x${string}`> = {
-  8453: ((process.env.NEXT_PUBLIC_DRIP_VAULT_BASE as `0x${string}` | undefined) || legacyVault) as `0x${string}`,
-  84532: ((process.env.NEXT_PUBLIC_DRIP_VAULT_SEPOLIA as `0x${string}` | undefined) || legacyVault) as `0x${string}`,
+  8453: ((process.env.NEXT_PUBLIC_DRIP_VAULT_BASE as `0x${string}` | undefined) || ZERO_VAULT) as `0x${string}`,
+  84532: ((process.env.NEXT_PUBLIC_DRIP_VAULT_SEPOLIA as `0x${string}` | undefined) || ZERO_VAULT) as `0x${string}`,
 };
 
 export function getVaultAddress(chainId?: number): `0x${string}` {
@@ -154,19 +153,18 @@ export function getVaultAddress(chainId?: number): `0x${string}` {
 }
 
 /**
- * Normalize a configured vault address to EIP-55 checksum form.
- * Lowercases before checksumming so a single checksum-casing typo in env
- * (valid address, wrong EIP-55 case) cannot silently brick the UI by
- * tripping isAddress and resolving to the zero address.
+ * Normalize lowercase configuration and validate mixed-case EIP-55 input.
+ * Invalid mixed-case input fails closed so a real character typo cannot be
+ * silently converted into a different valid destination.
  */
 export function normalizeVaultAddress(address: string): `0x${string}` {
   try {
-    if (typeof address !== "string" || !isAddress(address.toLowerCase())) return ZERO_VAULT;
-    return getAddress(address.toLowerCase() as `0x${string}`);
+    if (typeof address !== "string" || !isAddress(address)) return ZERO_VAULT;
+    return getAddress(address as `0x${string}`);
   } catch {
     return ZERO_VAULT;
   }
 }
 
-/** @deprecated Use getVaultAddress(chainId) / DRIP_VAULT_ADDRESSES. Kept to avoid breaking imports. */
-export const DRIP_VAULT_ADDRESS = legacyVault;
+/** @deprecated Use getVaultAddress(DRIP_CHAIN_ID). */
+export const DRIP_VAULT_ADDRESS = DRIP_VAULT_ADDRESSES[DRIP_CHAIN_ID];

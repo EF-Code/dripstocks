@@ -3,7 +3,7 @@
 ## Forked local
 1. `anvil --fork-url https://mainnet.base.org` (or Sepolia)
 2. `cd contracts && forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --private-key 0xac0974... --broadcast`
-3. Set `app/.env.local` NEXT_PUBLIC_DRIP_VAULT=0x...
+3. Set `app/.env.local` `NEXT_PUBLIC_DRIP_VAULT_SEPOLIA=0x...` plus the six `NEXT_PUBLIC_SEPOLIA_*` mock addresses
 4. `cd app && npm run dev` -> http://localhost:3000
 
 ## Flow

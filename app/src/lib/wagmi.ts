@@ -1,5 +1,5 @@
 import { createConfig, http } from "wagmi";
-import { base, baseSepolia } from "wagmi/chains";
+import { baseSepolia } from "wagmi/chains";
 import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
 
 const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID;
@@ -9,14 +9,13 @@ export const WALLET_CONNECT_READY = Boolean(projectId);
 
 const metadata = {
   name: "DripStocks",
-  description: "Stream tokenized stocks per second on Base.",
+  description: "Stream mock tokenized stocks per second on Base Sepolia.",
   url: "https://dripstocks.vercel.app",
   icons: ["https://dripstocks.vercel.app/icon.svg"],
 };
 
 export const config = createConfig({
-  // Sepolia first: disconnected visitors land on the testnet view.
-  chains: [baseSepolia, base],
+  chains: [baseSepolia],
   connectors: [
     injected({ shimDisconnect: true }),
     coinbaseWallet({ appName: "DripStocks", preference: { options: "all", telemetry: false } }),
@@ -27,7 +26,6 @@ export const config = createConfig({
       : []),
   ],
   transports: {
-    [base.id]: http(),
     [baseSepolia.id]: http(),
   },
   ssr: true,

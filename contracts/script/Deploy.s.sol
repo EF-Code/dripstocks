@@ -16,6 +16,5 @@ contract Deploy is Script {
         console2.log("chainId:", block.chainid);
         console2.log("DripVault:", address(vault));
         console2.log("owner:", vm.addr(pk));
-        // forge script will log address; also write to file for frontend
     }
 }

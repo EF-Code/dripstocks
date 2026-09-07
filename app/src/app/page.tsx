@@ -1,14 +1,10 @@
 "use client";
-import { useState } from "react";
-import { useAccount, useChainId, useConnect, useDisconnect, useReadContract, useSwitchChain } from "wagmi";
-import { baseSepolia } from "wagmi/chains";
+import { useReadContract } from "wagmi";
 import { CreateStream } from "@/components/CreateStream";
 import { StreamDashboard } from "@/components/StreamDashboard";
 import { TickerTape } from "@/components/TickerTape";
-import { getTokens, DRIP_VAULT_ABI, getVaultAddress } from "@/lib/b20";
-import { WALLET_CONNECT_READY } from "@/lib/wagmi";
-
-const SUPPORTED = [8453, 84532] as const;
+import { getTokens, DRIP_CHAIN_ID, DRIP_VAULT_ABI, getVaultAddress } from "@/lib/b20";
+import { ChainBanner, WalletButton } from "@/components/WalletControls";
 
 function LogoMark() {
   return (
@@ -20,88 +16,12 @@ function LogoMark() {
   );
 }
 
-function WalletButton() {
-  const { address, isConnected, isReconnecting, isConnecting } = useAccount();
-  const { connect, connectors, isPending, error } = useConnect();
-  const { disconnect } = useDisconnect();
-  const [open, setOpen] = useState(false);
-  if (isReconnecting || isConnecting || isPending) {
-    return <button disabled className="rounded-full bg-ink px-4 py-2 text-sm text-white">{isReconnecting ? "Reconnecting…" : "Connecting…"}</button>;
-  }
-  if (isConnected) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="rounded-full bg-ink px-3 py-1.5 font-mono text-xs text-white tnum">{address?.slice(0, 6)}…{address?.slice(-4)}</span>
-        <button onClick={() => disconnect()} className="rounded-full border border-hairline bg-card px-3 py-1.5 text-xs font-medium hover:border-ink">Disconnect</button>
-      </div>
-    );
-  }
-  return (
-    <div className="relative shrink-0">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="whitespace-nowrap rounded-full bg-baseblue px-4 py-2 text-sm font-semibold text-white hover:bg-basedark sm:px-5"
-      >
-        Connect wallet
-      </button>
-      {open && (
-        <>
-          <button aria-hidden tabIndex={-1} onClick={() => setOpen(false)} className="fixed inset-0 cursor-default" />
-          <div role="menu" aria-label="Choose a wallet" className="absolute right-0 z-20 mt-2 w-64 rounded-2xl border border-hairline bg-card p-2 shadow-xl">
-            {connectors.map((c) => (
-              <button
-                key={c.uid}
-                role="menuitem"
-                disabled={isPending}
-                onClick={() => { setOpen(false); connect({ connector: c }); }}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium hover:bg-paper disabled:opacity-50"
-              >
-                <span>{c.name === "Injected" ? "Browser wallet" : c.name}</span>
-                <span className="text-xs text-muted">{c.id === "walletConnect" ? "QR code" : c.id === "coinbaseWalletSDK" ? "Smart Wallet" : "Extension"}</span>
-              </button>
-            ))}
-            {!WALLET_CONNECT_READY && (
-              <div className="rounded-xl px-3 py-2.5 text-xs text-muted">
-                WalletConnect QR appears here once a project ID is configured.
-              </div>
-            )}
-          </div>
-        </>
-      )}
-      {error && <div role="alert" className="mt-2 max-w-64 text-xs text-danger">Connection failed. Check your wallet, then choose a connector to retry.</div>}
-    </div>
-  );
-}
-
-function ChainBanner() {
-  const { isConnected, chainId } = useAccount();
-  const { switchChain, isPending, error } = useSwitchChain();
-  if (!isConnected || (chainId !== undefined && (SUPPORTED as readonly number[]).includes(chainId))) return null;
-  return (
-    <div className="border-b border-amber-200 bg-amber-50">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-6 py-2.5 text-sm">
-        <span className="font-medium">Unsupported network.</span>
-        <span className="text-muted">DripStocks runs on Base Sepolia (testnet) and Base mainnet.</span>
-        <button
-          onClick={() => switchChain({ chainId: baseSepolia.id })}
-          disabled={isPending}
-          className="rounded-full bg-ink px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-        >
-          {isPending ? "Switching…" : "Switch to Base Sepolia"}
-        </button>
-        {error && <span role="alert">Network switch failed. Switch to Base Sepolia in your wallet.</span>}
-      </div>
-    </div>
-  );
-}
-
 function VaultConsole({ vaultAddress, chainId }: { vaultAddress: `0x${string}`; chainId?: number }) {
   const { data: nextId } = useReadContract({
     address: vaultAddress,
     abi: DRIP_VAULT_ABI,
     functionName: "nextStreamId",
+    chainId: DRIP_CHAIN_ID,
     query: { enabled: vaultAddress !== "0x0000000000000000000000000000000000000000", refetchInterval: 5000 },
   });
   const deployed = vaultAddress !== "0x0000000000000000000000000000000000000000";
@@ -132,7 +52,7 @@ function VaultConsole({ vaultAddress, chainId }: { vaultAddress: `0x${string}`; 
       <div className="mt-5 grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-pipeline p-3">
           <div className="text-[11px] tracking-widest text-white/50">STREAMS</div>
-          <div className="font-display text-2xl font-semibold tnum">{nextId !== undefined ? Number(nextId) : "—"}</div>
+          <div className="font-display text-2xl font-semibold tnum">{nextId !== undefined ? nextId.toString() : "—"}</div>
         </div>
         <div className="rounded-xl border border-pipeline p-3">
           <div className="text-[11px] tracking-widest text-white/50">SETTLEMENT</div>
@@ -144,7 +64,7 @@ function VaultConsole({ vaultAddress, chainId }: { vaultAddress: `0x${string}`; 
 }
 
 export default function Home() {
-  const chainId = useChainId();
+  const chainId = DRIP_CHAIN_ID;
   const vaultAddress = getVaultAddress(chainId);
   const tokens = getTokens(chainId);
   const onTestnet = chainId === 84532;
